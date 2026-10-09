@@ -45,7 +45,7 @@ claude plugin marketplace add Trackszx/pixelcrew
 claude plugin install pixel-crew@pixelcrew
 ```
 
-Once installed at the user scope it also loads in the desktop app's Code tab.
+Once installed at the user scope it also loads in the desktop app's Code tab. If the installer says an option is not set yet, that is the Language option: it already defaults to `auto`, so you can skip it.
 
 ## Commands
 
