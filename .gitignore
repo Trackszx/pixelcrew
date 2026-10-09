@@ -1,0 +1,4 @@
+# written by Claude Code when it loads the mod
+.claude-plugin/types/
+tsconfig.json
+node_modules/

@@ -1,0 +1,6 @@
+{
+  "name": "pixelcrew",
+  "description": "Pixel-art progress bar and subagent crew panel for Claude Code",
+  "owner": { "name": "Trackszx" },
+  "plugins": [{ "name": "pixel-crew", "source": "./" }]
+}

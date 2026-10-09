@@ -1,0 +1,11 @@
+{
+  "name": "pixel-crew",
+  "version": "0.1.0",
+  "description": "Pixel-art progress bar with the Claude mascot and a side panel that turns your subagents into a crew of characters (developer, artist, researcher, tester, Codex...).",
+  "author": { "name": "Trackszx" },
+  "homepage": "https://github.com/Trackszx/pixelcrew",
+  "repository": "https://github.com/Trackszx/pixelcrew",
+  "license": "MIT",
+  "keywords": ["progress", "subagents", "pixel-art", "ui", "mod"],
+  "types": "./types/index.d.ts"
+}
