@@ -1,11 +1,33 @@
 {
   "name": "pixel-crew",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pixel-art progress bar with the Claude mascot and a side panel that turns your subagents into a crew of characters (developer, artist, researcher, tester, Codex...).",
-  "author": { "name": "Trackszx" },
+  "author": {
+    "name": "Trackszx"
+  },
   "homepage": "https://github.com/Trackszx/pixelcrew",
   "repository": "https://github.com/Trackszx/pixelcrew",
   "license": "MIT",
-  "keywords": ["progress", "subagents", "pixel-art", "ui", "mod"],
+  "keywords": [
+    "progress",
+    "subagents",
+    "pixel-art",
+    "ui",
+    "mod"
+  ],
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "Language of the band and the Agents panel. auto follows Claude Code's language setting, then your system language (English, Portuguese or Spanish; anything else falls back to English).",
+      "default": "auto",
+      "options": [
+        "auto",
+        "en",
+        "pt",
+        "es"
+      ]
+    }
+  },
   "types": "./types/index.d.ts"
 }

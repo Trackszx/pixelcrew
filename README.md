@@ -6,7 +6,7 @@ A pixel-art progress bar with the Claude mascot, and a side panel that turns you
 
 ## What it does
 
-**A progress band above the prompt.** While Claude works, the band shows what it is doing right now ("Editando register.tsx", "Rodando os testes"), a pixel progress bar with a light sweeping across it, and the percentage. When Claude delegates to subagents it becomes the **boss**: it grows, puts on a crown and cape, the bar turns purple, and a counter shows how many subagents are done (`1/3`).
+**A progress band above the prompt.** While Claude works, the band shows what it is doing right now ("Editing register.tsx", "Running the tests"), a pixel progress bar with a light sweeping across it, and the percentage. When Claude delegates to subagents it becomes the **boss**: it grows, puts on a crown and cape, the bar turns purple, and a counter shows how many subagents are done (`1/3`).
 
 ![The progress band](docs/band.png)
 
@@ -14,12 +14,12 @@ A pixel-art progress bar with the Claude mascot, and a side panel that turns you
 
 <img src="docs/panel.png" alt="The Agents panel" width="420">
 
-**The crew.** Each subagent gets a role from the first keyword in its description:
+**The crew.** Each subagent gets a role from the first keyword in its description (English, Portuguese and Spanish keywords are understood):
 
 | Character | Role | Picked for |
 | --- | --- | --- |
 | Headphones and laptop | `developer` | build, implement, fix, refactor, create, write |
-| Beret, brush and palette | `artist` | design, desenhar, icons, logo, UI, CSS, visuals |
+| Beret, brush and palette | `artist` | design, draw, icons, logo, UI, CSS, visuals |
 | Explorer hat and lantern | `researcher` | research, explore, search, read, analyze, plan |
 | Hard hat and wrench | `worker` | anything else |
 | Safety goggles and clipboard | `tester` | test, verify, debug, review, audit |
@@ -52,19 +52,23 @@ Once installed at the user scope it also loads in the desktop app's Code tab.
 | Command | What it does |
 | --- | --- |
 | `/crew` | Opens the Agents panel |
-| `/crew-limpar` | Clears the task list and the agents |
+| `/crew-clear` | Clears the task list and the agents |
+
+## Language
+
+The band and the panel speak **English**, **Portuguese** and **Spanish**. The `Language` option (in `/config`, or `pluginConfigs` in your settings) is `auto` by default, which follows Claude Code's `language` setting, then `LC_ALL` / `LC_MESSAGES` / `LANG`, then your system's language. Anything else falls back to English. Set it to `en`, `pt` or `es` to pin one.
 
 ## Good to know
 
 - **It costs no tokens.** Everything is drawn locally. The plugin only listens to events that already happen (a subagent starts, a model step, a tool call, a turn ends) and passes them on unchanged: it adds nothing to the prompt and makes no model calls.
 - **Costs are estimates.** They come from a price table at the top of [`hooks/register.tsx`](hooks/register.tsx); adjust it if your prices differ. The context percentage assumes a 200k window.
-- **The interface text is in Portuguese** (Rodando, Concluídos, Custo, Tempo...). The strings live in `hooks/register.tsx` if you want to translate them.
 - The animation is a frame counter that ticks about three times a second, and only while something is working.
 
 ## Development
 
 ```
 hooks/art.ts        sprites, palette and the pixel bar (SVG)
+hooks/i18n.ts       every text in English, Portuguese and Spanish
 hooks/register.tsx  the hooks: state, roles, progress, band and panel
 types/index.d.ts    the plugin's state contract
 tests/              tests run with `claude plugin test .`
@@ -76,12 +80,6 @@ claude plugin test .
 ```
 
 To try your changes, load the folder with `claude --plugin-dir <path to this folder>`.
-
-## Português
-
-Uma barra de progresso em pixel art com o mascote do Claude, mais um painel lateral que transforma os subagents numa equipe de personagens. Enquanto o Claude trabalha, a faixa acima do prompt mostra o que ele está fazendo, a barra e a porcentagem. Quando ele delega, vira o **boss** (coroa, capa e barra roxa) e conta quantos subagents já terminaram. O painel mostra cada agent com papel, modelo, progresso, tokens, custo estimado e tempo. O plugin não gasta tokens: tudo é desenhado localmente.
-
-Para instalar, num terminal do Claude Code: `/plugin install pixel-crew --marketplace Trackszx/pixelcrew`.
 
 ## License
 

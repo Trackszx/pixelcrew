@@ -3,8 +3,13 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { PcAgent, PcMain, PcRole, PcTask } from '../types'
 import { barSvg, barText, CLAY, ROLES, spriteSvg, TERM_SPRITE } from './art'
+import { langOf, strings, systemLang } from './i18n'
+import type { Lang, Strings } from './i18n'
 
 const PANE = 'pixel-crew-agents'
+
+// the texts in the language picked when the module loaded (see register)
+let L: Strings = strings('en')
 const CONTEXT_WINDOW = 200_000
 
 // Preço aproximado em US$ por milhão de tokens: entrada, saída, leitura de cache, escrita de cache
@@ -36,10 +41,10 @@ type SubRole = Exclude<PcRole, 'boss' | 'codex'>
 
 // em empate, vale a ordem desta lista
 const ROLE_WORDS: Array<[SubRole, RegExp]> = [
-  ['tester', /(test|verif|\bqa\b|debug|\bbug|valid|review|revis|audit)/],
-  ['artist', /(design|desenh|\bart|graphic|gráfic|grafic|\bimag|\bicon|ícone|logo|visual|\bui\b|\bux\b|style|estilo|\bcss|ilustr|illustr|\banim)/],
-  ['researcher', /(research|pesquis|explor|search|busca|investig|\bfind|encontr|\bdocs|analy|anális|analis|competi|concorr|\bread|\bler\b|\bplan|coorden|coordinat|architect|arquitet)/],
-  ['developer', /(build|implement|\bcode|códig|codig|\bfix|corrig|refactor|refator|feature|\bapi\b|endpoint|component|página|pagina|\bpage|landing|script|develop|desenvolv|\bcri[ae]r?\b|create|write|escrev)/],
+  ['tester', /(test|verif|\bqa\b|debug|\bbug|valid|review|revis|audit|prueb|probar|depur)/],
+  ['artist', /(design|\bdraw|desenh|diseñ|disen|dibuj|\bart|graphic|gráfic|grafic|\bimag|\bicon|ícone|logo|visual|\bui\b|\bux\b|style|estilo|\bcss|ilustr|illustr|\banim)/],
+  ['researcher', /(research|pesquis|explor|search|busca|investig|\bfind|encontr|\bdocs|analy|anális|analis|analiz|competi|concorr|\bread|\bler\b|\bplan|coorden|coordinat|architect|arquitet)/],
+  ['developer', /(build|implement|\bcode|códig|codig|\bfix|corrig|correg|arregl|refactor|refator|feature|\bapi\b|endpoint|component|página|pagina|\bpage|landing|script|develop|desenvolv|\bcri[ae]r?\b|\bcrea|create|write|escrev|escrib|constru)/],
 ]
 
 function earliestRole(text: string): SubRole | undefined {
@@ -120,41 +125,41 @@ export function agentRatio(a: PcAgent): number {
 }
 
 function base(path: unknown): string {
-  return String(path ?? '').split(/[\\/]/).pop() || 'arquivo'
+  return String(path ?? '').split(/[\\/]/).pop() || L.file
 }
 
 /** Uma frase curta do que uma ferramenta do agent principal está fazendo. */
-export function activityOf(tool: string, input: any): string {
+export function activityOf(tool: string, input: any, s: Strings = L): string {
   switch (tool) {
     case 'Read':
-      return `Lendo ${base(input?.file_path)}`
+      return s.reading(base(input?.file_path))
     case 'Edit':
     case 'MultiEdit':
-      return `Editando ${base(input?.file_path)}`
+      return s.editing(base(input?.file_path))
     case 'Write':
-      return `Escrevendo ${base(input?.file_path)}`
+      return s.writing(base(input?.file_path))
     case 'Bash':
     case 'PowerShell':
-      return String(input?.description || 'Rodando um comando')
+      return String(input?.description || s.runningCommand)
     case 'Grep':
     case 'Glob':
-      return 'Procurando no código'
+      return s.searchingCode
     case 'Agent':
     case 'Task':
-      return `Delegando: ${String(input?.description || 'subagent')}`
+      return s.delegating(String(input?.description || 'subagent'))
     case 'WebSearch':
     case 'WebFetch':
-      return 'Pesquisando na web'
+      return s.searchingWeb
     case 'Skill':
-      return `Usando a skill ${String(input?.skill || '')}`.trim()
+      return s.usingSkill(String(input?.skill || '')).replace(/\s+/g, ' ').trim()
     case 'TodoWrite':
     case 'TaskCreate':
     case 'TaskUpdate':
-      return 'Organizando as tarefas'
+      return s.organizingTasks
     case 'AskUserQuestion':
-      return 'Esperando sua resposta'
+      return s.waitingForYou
     default:
-      return tool.startsWith('mcp__') ? `Usando ${tool.split('__').pop()}` : `Usando ${tool}`
+      return s.using(tool.startsWith('mcp__') ? String(tool.split('__').pop()) : tool)
   }
 }
 
@@ -204,10 +209,31 @@ async function addAgent($: EngineInterface, agent: PcAgent) {
   }
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  // language: the option, or with "auto" (the default) the system's, refined
+  // at session start by Claude Code's own "language" setting and LANG/LC_*
+  const choice = String(options.language ?? 'auto')
+  const fixed = choice === 'auto' ? undefined : langOf(choice)
+  let lang: Lang = fixed ?? systemLang() ?? 'en'
+  L = strings(lang)
+
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'crew', description: 'Abre o painel dos subagents (pixel-crew)' })
-    await $.command.register({ name: 'crew-limpar', description: 'Limpa as tarefas e os agents do pixel-crew' })
+    if (!fixed) {
+      try {
+        const settings: any = await $.settings.read()
+        const found =
+          langOf(settings?.language) ??
+          langOf(await $.env.get('LC_ALL')) ??
+          langOf(await $.env.get('LC_MESSAGES')) ??
+          langOf(await $.env.get('LANG'))
+        if (found && found !== lang) {
+          lang = found
+          L = strings(lang)
+        }
+      } catch {}
+    }
+    await $.command.register({ name: 'crew', description: L.cmdCrew })
+    await $.command.register({ name: 'crew-clear', description: L.cmdClear })
 
     // Relógio da animação: troca o quadro ~3x por segundo enquanto há agent
     // rodando ou tarefa em andamento; parado, não escreve nada.
@@ -248,13 +274,13 @@ export const register: Register = on => {
 
   on('command.run', { command: 'crew' }, async $ => {
     await $.ui.open({ id: PANE, title: 'Agents' })
-    return { text: 'Painel dos agents aberto.' }
+    return { text: L.paneOpened }
   })
 
-  on('command.run', { command: 'crew-limpar' }, async $ => {
+  on('command.run', { command: 'crew-clear' }, async $ => {
     await update($, tasks, () => [])
     await update($, agents, () => [])
-    return { text: 'pixel-crew limpo.' }
+    return { text: L.cleared }
   })
 
   on('agent.spawn', async ($, e, next) => {
@@ -285,14 +311,14 @@ export const register: Register = on => {
   // zera já no envio do prompt: o app marca "trabalhando" antes do turn.start,
   // e sem isso a faixa mostraria por um instante os 100% do turno anterior
   on('prompt.submit', async ($, e, next) => {
-    await update($, main, () => ({ activity: 'Pensando', steps: 0, tools: 0, working: true, done: false })).catch(
+    await update($, main, () => ({ activity: L.thinking, steps: 0, tools: 0, working: true, done: false })).catch(
       () => {},
     )
     return next(e)
   })
 
   on('turn.start', async ($, e, next) => {
-    await update($, main, () => ({ activity: 'Pensando', steps: 0, tools: 0, working: true, done: false })).catch(
+    await update($, main, () => ({ activity: L.thinking, steps: 0, tools: 0, working: true, done: false })).catch(
       () => {},
     )
     return next(e)
@@ -338,7 +364,7 @@ export const register: Register = on => {
         tasks: failed ? a.tasks : a.tasks.map(t => ({ ...t, status: 'completed' as const })),
       })).catch(() => {})
     } else {
-      await update($, main, m => ({ ...m, activity: 'Pronto', working: false, done: true })).catch(() => {})
+      await update($, main, m => ({ ...m, activity: L.done, working: false, done: true })).catch(() => {})
     }
     return next(e)
   })
@@ -352,7 +378,7 @@ export const register: Register = on => {
     if (isCodexBash) {
       await addAgent($, {
         id: e.tool_use_id,
-        description: String(input?.description ?? 'Tarefa delegada ao Codex'),
+        description: String(input?.description ?? L.codexTask),
         type: 'codex',
         role: 'codex',
         model: 'codex',
@@ -376,7 +402,7 @@ export const register: Register = on => {
     const r = await next(e)
 
     if (!agentId) {
-      await update($, main, m => (m.working ? { ...m, activity: 'Pensando' } : m)).catch(() => {})
+      await update($, main, m => (m.working ? { ...m, activity: L.thinking } : m)).catch(() => {})
     }
 
     try {
@@ -407,7 +433,7 @@ export const register: Register = on => {
     // o app já diz "trabalhando" mas o estado ainda é do turno que acabou: é um turno novo
     const m: PcMain =
       e.props.isWorking && !stored.working
-        ? { activity: 'Pensando', steps: 0, tools: 0, working: true, done: false }
+        ? { activity: L.thinking, steps: 0, tools: 0, working: true, done: false }
         : stored
     const since = await read($, batchStart)
     const running = crew.filter(a => a.status === 'running').length
@@ -437,12 +463,12 @@ export const register: Register = on => {
 
     const active = list.find(t => t.status === 'in_progress')
     const title = isWorking
-      ? m.activity && m.activity !== 'Pensando'
+      ? m.activity && m.activity !== L.thinking
         ? m.activity
-        : active?.activeForm || 'Pensando'
+        : active?.activeForm || L.thinking
       : delegating
-        ? `Esperando ${running} ${running === 1 ? 'agent' : 'agents'}`
-        : active?.activeForm || active?.subject || 'Tarefas'
+        ? L.waiting(running)
+        : active?.activeForm || active?.subject || L.tasks
 
     const color = delegating ? ROLES.boss.color : CLAY
     const els: any = $.ui.resolve(e)
@@ -473,13 +499,13 @@ export const register: Register = on => {
     return (
       <Box flexDirection="row" alignItems="center" gap={1} paddingX={1}>
         <Box flexShrink={0} alignItems="center" justifyContent="center">
-          <Svg source={sprite.source} alt={delegating ? 'Claude como boss' : 'Mascote do Claude'} width={sprite.width} height={sprite.height} />
+          <Svg source={sprite.source} alt={delegating ? L.altBoss : L.altMascot} width={sprite.width} height={sprite.height} />
         </Box>
         <Box width="30%" flexShrink={0} overflow="hidden">
           <Text bold wrap="truncate">{title}</Text>
         </Box>
         <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden" justifyContent="center">
-          <Svg source={barSvg({ ratio, color, frame: f })} alt={`Progresso: ${pct}`} height={12} />
+          <Svg source={barSvg({ ratio, color, frame: f })} alt={L.altProgress(pct)} height={12} />
         </Box>
         <Box flexShrink={0} flexDirection="row" gap={1} alignItems="center">
           <Text bold>{pct}</Text>
@@ -509,7 +535,7 @@ export const register: Register = on => {
     const last = running.length ? clock : crew.reduce((m, a) => Math.max(m, a.endedAt ?? a.startedAt), 0)
     const elapsed = crew.length ? last - first : 0
     const mainTasks = await read($, tasks)
-    const kit = mainTasks.find(x => x.status === 'in_progress')?.subject ?? (crew.length ? 'Equipe' : 'Nenhum agent ainda')
+    const kit = mainTasks.find(x => x.status === 'in_progress')?.subject ?? (crew.length ? L.team : L.noAgentsYet)
 
     const metric = (label: string, value: string, key: string) => (
       <Box key={key} flexDirection="column" borderStyle="round" borderDimColor paddingX={1} flexGrow={1}>
@@ -525,11 +551,11 @@ export const register: Register = on => {
       const progress = a.tasks.length
         ? `${doneN}/${a.tasks.length}`
         : a.status === 'running'
-          ? `${a.tools} ${a.tools === 1 ? 'ação' : 'ações'}`
+          ? L.actions(a.tools)
           : a.status === 'done'
-            ? 'pronto'
-            : 'falhou'
-      const phase = a.status === 'running' ? (a.tasks.find(x => x.status === 'in_progress')?.activeForm ?? a.phase ?? 'Começando') : ''
+            ? L.ready
+            : L.failed
+      const phase = a.status === 'running' ? (a.tasks.find(x => x.status === 'in_progress')?.activeForm ?? a.phase ?? L.starting) : ''
       const ctxPct = Math.round((a.ctxTokens / CONTEXT_WINDOW) * 100)
       const took = fmtTime((a.endedAt ?? clock) - a.startedAt)
       const stats = a.role === 'codex' && a.steps === 0
@@ -571,7 +597,7 @@ export const register: Register = on => {
       return (
         <Box key={`a-${a.id}`} flexDirection="row" gap={1} paddingY={1} alignItems="flex-start">
           <Box flexShrink={0} alignItems="center">
-            <Svg source={sprite.source} alt={`Personagem ${info.label}`} width={sprite.width} height={sprite.height} />
+            <Svg source={sprite.source} alt={L.altCharacter(info.label)} width={sprite.width} height={sprite.height} />
           </Box>
           <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
             <Box flexDirection="row" justifyContent="space-between" gap={1}>
@@ -587,7 +613,7 @@ export const register: Register = on => {
               <Text dimColor>{stats}</Text>
             </Box>
             <Box marginTop={1} overflow="hidden">
-              <Svg source={barSvg({ ratio, color: info.color, frame: f })} alt={`Progresso de ${a.description}`} height={6} />
+              <Svg source={barSvg({ ratio, color: info.color, frame: f })} alt={L.altProgress(a.description)} height={6} />
             </Box>
           </Box>
         </Box>
@@ -598,18 +624,18 @@ export const register: Register = on => {
       <Box flexDirection="column" gap={1}>
         <Text bold>{kit}</Text>
         <Box flexDirection="row" gap={1}>
-          {metric('Custo', fmtCost(cost), 'm-cost')}
-          {metric('Tokens', fmtTokens(tokensTotal), 'm-tok')}
-          {metric('Tempo', fmtTime(elapsed), 'm-time')}
+          {metric(L.cost, fmtCost(cost), 'm-cost')}
+          {metric(L.tokens, fmtTokens(tokensTotal), 'm-tok')}
+          {metric(L.time, fmtTime(elapsed), 'm-time')}
         </Box>
-        <Text dimColor>Rodando · {running.length}</Text>
-        {running.length === 0 && <Text dimColor>Nenhum agent trabalhando agora.</Text>}
+        <Text dimColor>{L.running(running.length)}</Text>
+        {running.length === 0 && <Text dimColor>{L.nobodyWorking}</Text>}
         {running.map(row)}
         {finished.length > 0 && (
           <Button
             key="toggle-done"
             plain
-            label={`${expanded ? '▾' : '▸'} Concluídos · ${finished.length}`}
+            label={`${expanded ? '▾' : '▸'} ${L.finished(finished.length)}`}
             onPress={() => update($, showDone, v => !v)}
           />
         )}
