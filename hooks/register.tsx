@@ -25,6 +25,7 @@ const agents = atom({ plugin: 'pixel-crew', key: 'agents' } as const, [])
 const now = atom({ plugin: 'pixel-crew', key: 'now' } as const, 0)
 const frame = atom({ plugin: 'pixel-crew', key: 'frame' } as const, 0)
 const showDone = atom({ plugin: 'pixel-crew', key: 'showDone' } as const, true)
+const bandOn = atom({ plugin: 'pixel-crew', key: 'bandOn' } as const, true)
 const IDLE: PcMain = { activity: '', steps: 0, tools: 0, working: false, done: false }
 const main = atom({ plugin: 'pixel-crew', key: 'main' } as const, IDLE)
 // início do lote atual de subagents: os que começaram desde que nenhum rodava
@@ -266,12 +267,20 @@ export const register: Register = (on, options) => {
     }
     await $.command.register({ name: 'crew', description: L.cmdCrew })
     await $.command.register({ name: 'crew-clear', description: L.cmdClear })
+    await $.command.register({ name: 'crew-bar', description: L.cmdBar })
+    // a escolha do /crew-bar vale para as próximas sessões também
+    const saved = await $.store.get('bandOn').catch(() => undefined)
+    if (typeof saved === 'boolean') await update($, bandOn, () => saved)
 
-    // Relógio da animação: troca o quadro ~3x por segundo enquanto há agent
+    // Relógio da animação: troca o quadro 30x por segundo enquanto há agent
     // rodando ou tarefa em andamento; parado, não escreve nada.
     let ticks = 0
     let idle = 0
-    $.clock.every(300, () => {
+    let ticking = false
+    $.clock.every(33, () => {
+      // um tique que ainda não acabou faz o próximo esperar a vez
+      if (ticking) return
+      ticking = true
       void (async () => {
         const list = await read($, agents)
         const busy = list.some(a => a.status === 'running')
@@ -281,19 +290,22 @@ export const register: Register = (on, options) => {
         const t0 = Date.now()
         // comemoração, tremida e a barra deslizando também animam; com um
         // quadro a mais no fim, para a faixa sumir quando a comemoração acaba
+        const band = await read($, bandOn)
         const lively =
           settling || effects.asking !== null || t0 < effects.celebrateUntil + 400 || t0 < effects.errorUntil + 400
+        // com a faixa desligada, só o painel (agents rodando) anima
+        if (!band && !busy) return
         if (!busy && !working && !lively) {
           // dormindo (tarefas na faixa, ninguém trabalhando): o "zz" respira devagar
-          if (list2.length && ++idle % 3 === 0) await update($, frame, n => (n + 1) % 100000)
+          if (list2.length && ++idle % 24 === 0) await update($, frame, n => (n + 1) % 100000)
           return
         }
         await update($, frame, n => (n + 1) % 100000)
         if (!busy) return
         ticks += 1
-        if (ticks % 3 === 0) await update($, now, () => Date.now())
+        if (ticks % 30 === 0) await update($, now, () => Date.now())
         // a cada ~5s confere com a lista do engine (agents interrompidos ou mortos)
-        if (ticks % 15 !== 0) return
+        if (ticks % 150 !== 0) return
         const live = await $.agent.list()
         const ended = new Map(
           live
@@ -309,7 +321,11 @@ export const register: Register = (on, options) => {
               : a,
           ),
         )
-      })().catch(() => {})
+      })()
+        .catch(() => {})
+        .finally(() => {
+          ticking = false
+        })
     })
 
     return next(e)
@@ -318,6 +334,19 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'crew' }, async $ => {
     await $.ui.open({ id: PANE, title: 'Agents' })
     return { text: L.paneOpened }
+  })
+
+  // /crew-bar alterna; /crew-bar on|off (ou ligar/desligar, activar/desactivar) escolhe
+  on('command.run', { command: 'crew-bar' }, async ($, e) => {
+    const arg = e.args.trim().toLowerCase()
+    const want = /^(off|desl|desa|desact|apag|no|não|nao)/.test(arg)
+      ? false
+      : /^(on|lig|ativ|activ|encend|yes|sim|s[ií])/.test(arg)
+        ? true
+        : !(await read($, bandOn))
+    await update($, bandOn, () => want)
+    await $.store.set('bandOn', want).catch(() => {})
+    return { text: want ? L.barOn : L.barOff }
   })
 
   on('command.run', { command: 'crew-clear' }, async $ => {
@@ -497,6 +526,7 @@ export const register: Register = (on, options) => {
 
   // ── Faixa acima do prompt ──────────────────────────────────────────────
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (!(await read($, bandOn))) return next(e)
     const list = await read($, tasks)
     const crew = await read($, agents)
     const stored = await read($, main)
@@ -698,7 +728,7 @@ export const register: Register = (on, options) => {
       }
 
       const { Svg } = els
-      const sprite = spriteSvg(a.role, 2, a.status === 'running', f)
+      const sprite = spriteSvg(a.role, 2, a.status === 'running', Math.floor(f / 9))
       return (
         <Box key={`a-${a.id}`} flexDirection="row" gap={1} paddingY={1} alignItems="flex-start">
           <Box flexShrink={0} alignItems="center">

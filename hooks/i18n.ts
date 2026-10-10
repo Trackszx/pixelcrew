@@ -24,6 +24,9 @@ export type Strings = {
   cleared: string
   cmdCrew: string
   cmdClear: string
+  cmdBar: string
+  barOn: string
+  barOff: string
   altBoss: string
   altMascot: string
   altProgress: (what: string) => string
@@ -65,6 +68,9 @@ const en: Strings = {
   cleared: 'pixel-crew cleared.',
   cmdCrew: 'Open the subagents panel (pixel-crew)',
   cmdClear: 'Clear pixel-crew tasks and agents',
+  cmdBar: 'Turn the progress band on or off (on, off, or nothing to toggle)',
+  barOn: 'Progress band on',
+  barOff: 'Progress band off. /crew-bar turns it back on',
   altBoss: 'Claude as the boss',
   altMascot: 'Claude mascot',
   altProgress: what => `Progress: ${what}`,
@@ -106,6 +112,9 @@ const pt: Strings = {
   cleared: 'pixel-crew limpo.',
   cmdCrew: 'Abre o painel dos subagents (pixel-crew)',
   cmdClear: 'Limpa as tarefas e os agents do pixel-crew',
+  cmdBar: 'Liga ou desliga a barra de progresso (on, off, ou nada para alternar)',
+  barOn: 'Barra de progresso ligada',
+  barOff: 'Barra de progresso desligada. /crew-bar liga de novo',
   altBoss: 'Claude como boss',
   altMascot: 'Mascote do Claude',
   altProgress: what => `Progresso: ${what}`,
@@ -147,6 +156,9 @@ const es: Strings = {
   cleared: 'pixel-crew limpio.',
   cmdCrew: 'Abre el panel de subagentes (pixel-crew)',
   cmdClear: 'Limpia las tareas y los agentes de pixel-crew',
+  cmdBar: 'Activa o desactiva la barra de progreso (on, off, o nada para alternar)',
+  barOn: 'Barra de progreso activada',
+  barOff: 'Barra de progreso desactivada. /crew-bar la vuelve a activar',
   altBoss: 'Claude como jefe',
   altMascot: 'Mascota de Claude',
   altProgress: what => `Progreso: ${what}`,

@@ -221,8 +221,13 @@ const CONFETTI_Y = [3, 0, 5, 2, 6, 1, 4, 0, 6, 3, 2, 5]
  */
 export function mascotSvg(role: 'clawd' | 'boss', pose: Pose, frame = 0, px = 2): Sprite {
   const g = grid(role)
-  // passos: um par de pernas levanta a cada quadro
-  if (pose === 'walk') for (const x of frame % 2 ? [6, 11] : [4, 13]) box(g, '.', x, x, 14, 14)
+  // o relógio anda a 30 quadros por segundo: passos e pulo trocam a cada 6
+  // quadros (5x por segundo) e o confete cai a cada 3, para o Clawd não sair
+  // correndo
+  const step = Math.floor(frame / 6)
+  const fall = Math.floor(frame / 3)
+  // passos: um par de pernas levanta a cada passo
+  if (pose === 'walk') for (const x of step % 2 ? [6, 11] : [4, 13]) box(g, '.', x, x, 14, 14)
   if (pose === 'sleep') {
     box(g, 'X', 6, 6, 8, 8)
     box(g, 'X', 11, 11, 8, 8)
@@ -240,8 +245,8 @@ export function mascotSvg(role: 'clawd' | 'boss', pose: Pose, frame = 0, px = 2)
     box(g, 'X', 2, 2, 5, 6)
     box(g, 'X', 15, 15, 5, 6)
   }
-  const dy = pose === 'walk' ? -(frame % 2) : pose === 'jump' ? -[0, 1, 2, 1][frame % 4]! : 0
-  const dx = pose === 'shake' ? (frame % 2 ? 1 : -1) : 0
+  const dy = pose === 'walk' ? -(step % 2) : pose === 'jump' ? -[0, 1, 2, 1][step % 4]! : 0
+  const dx = pose === 'shake' ? (Math.floor(frame / 2) % 2 ? 1 : -1) : 0
 
   let rects = ''
   const put = (x: number, y: number, fill: string) =>
@@ -259,7 +264,7 @@ export function mascotSvg(role: 'clawd' | 'boss', pose: Pose, frame = 0, px = 2)
   }
   if (pose === 'jump') {
     CONFETTI_X.forEach((x, i) => {
-      const y = ((frame + CONFETTI_Y[i]!) % 7) - 1
+      const y = ((fall + CONFETTI_Y[i]!) % 7) - 1
       if (!body(x, y)) put(x, y, CONFETTI[i % CONFETTI.length]!)
     })
   }
@@ -316,7 +321,7 @@ export function barSvg({ ratio, color, frame = 0 }: BarOpts): string {
   if (ratio === null) {
     const chunk = 12
     const span = COLS - chunk
-    const t = (frame * 2) % (span * 2)
+    const t = frame % (span * 2)
     from = t <= span ? t : span * 2 - t
     to = from + chunk
   } else {
@@ -327,7 +332,7 @@ export function barSvg({ ratio, color, frame = 0 }: BarOpts): string {
   if (to > from) {
     body += rect(from, 0, to - from, ROWS, color) + rect(from, 0, to - from, 1, hi)
     const period = to - from + ROWS + 8
-    const x0 = from + ((frame * 2) % period) - ROWS
+    const x0 = from + (frame % period) - ROWS
     for (let r = 0; r < ROWS; r++) {
       const a = x0 + ROWS - 1 - r
       const b = a + 1

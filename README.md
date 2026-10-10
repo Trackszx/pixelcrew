@@ -62,6 +62,7 @@ Once installed at the user scope it also loads in the desktop app's Code tab. If
 | --- | --- |
 | `/crew` | Opens the Agents panel |
 | `/crew-clear` | Clears the task list and the agents |
+| `/crew-bar` | Turns the progress band off or back on (`/crew-bar off`, `/crew-bar on`, or nothing to toggle). The choice is kept across sessions; the Agents panel keeps working |
 
 ## Language
 
@@ -71,7 +72,7 @@ The band and the panel speak **English**, **Portuguese** and **Spanish**. The `L
 
 - **It costs no tokens.** Everything is drawn locally. The plugin only listens to events that already happen (a subagent starts, a model step, a tool call, a turn ends) and passes them on unchanged: it adds nothing to the prompt and makes no model calls.
 - **Costs are estimates.** They come from a price table at the top of [`hooks/register.tsx`](hooks/register.tsx); adjust it if your prices differ. The context percentage assumes a 200k window.
-- The animation is a frame counter that ticks about three times a second, and only while something is working or a mood is showing (a sleeping mascot ticks slower).
+- The animation is a frame counter that ticks 30 times a second, and only while something is working or a mood is showing (a sleeping mascot ticks slower).
 
 ## Development
 

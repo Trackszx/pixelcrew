@@ -1,6 +1,6 @@
 {
   "name": "pixel-crew",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Pixel-art progress bar with the Claude mascot and a side panel that turns your subagents into a crew of characters (developer, artist, researcher, tester, Codex...).",
   "author": {
     "name": "Trackszx"

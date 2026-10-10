@@ -62,6 +62,8 @@ declare module 'claude-code' {
       now: number
       frame: number
       showDone: boolean
+      /** a faixa acima do prompt aparece (o /crew-bar desliga; guardado entre sessões) */
+      bandOn: boolean
       main: PcMain
       batchStart: number
       fx: PcFx

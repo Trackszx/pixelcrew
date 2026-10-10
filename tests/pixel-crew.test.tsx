@@ -257,3 +257,25 @@ test('a failed tool turns the bar red for a moment', EN, async ($, on) => {
   expect(svgs.some(s => String(s.props.source).includes('#E24B4A'))).toBe(true)
   await ui.unmount()
 })
+
+test('/crew-bar turns the band off and on', EN, async ($, on) => {
+  // with the band off, what is beneath it (here, an empty row) draws instead
+  ;(on as any)('ui.render', { component: 'AbovePrompt' }, async ($: any, e: any) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  const run = (args: string) => ($.command.run as any)({ command: 'crew-bar', args })
+  const thinking = async () => {
+    const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'desktop', component: 'AbovePrompt', props: BAND })
+    const found = await ui.find({ text: /Thinking/ })
+    await ui.unmount()
+    return found
+  }
+
+  expect((await run('off')).text).toMatch(/Progress band off/)
+  expect(await thinking()).toBeUndefined()
+  expect((await run('')).text).toBe('Progress band on')
+  expect(await thinking()).toBeDefined()
+  expect((await run('desligar')).text).toMatch(/off/)
+  expect((await run('on')).text).toBe('Progress band on')
+})
