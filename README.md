@@ -6,9 +6,18 @@ A pixel-art progress bar with the Claude mascot, and a side panel that turns you
 
 ## What it does
 
-**A progress band above the prompt.** While Claude works, the band shows what it is doing right now ("Editing register.tsx", "Running the tests"), a pixel progress bar with a light sweeping across it, and the percentage. When Claude delegates to subagents it becomes the **boss**: it grows, puts on a crown and cape, the bar turns purple, and a counter shows how many subagents are done (`1/3`).
+**A progress band above the prompt.** While Claude works, the band shows what it is doing right now ("Editing register.tsx", "Running the tests"), a pixel progress bar with a light sweeping across it, and the percentage. The mascot walks along the bar, right at the edge of what is done, and the bar glides to each new value instead of jumping. When Claude delegates to subagents it becomes the **boss**: it grows, puts on a crown and cape, the bar turns purple, and a counter shows how many subagents are done (`1/3`).
 
 ![The progress band](docs/band.png)
+
+**Moods.** The mascot reacts to what happens in the session:
+
+- **Done:** when a turn finishes well, it jumps among confetti at 100% for a couple of seconds.
+- **Waiting for you:** when Claude asks a question or needs your permission, it raises a hand with a `!`.
+- **Something failed:** when one of Claude's tools fails, it shakes and the bar turns red for a moment.
+- **Asleep:** when nothing is running but the task list still has work, it dozes off.
+
+![The mascot's moods](docs/moods.png)
 
 **An Agents panel.** Every subagent gets a row: its character, its role, the model and effort, what it is doing, context used, tokens, estimated cost, time, and its own progress bar. Totals for cost, tokens and time sit on top. The panel opens by itself when the first subagent starts.
 
@@ -62,7 +71,7 @@ The band and the panel speak **English**, **Portuguese** and **Spanish**. The `L
 
 - **It costs no tokens.** Everything is drawn locally. The plugin only listens to events that already happen (a subagent starts, a model step, a tool call, a turn ends) and passes them on unchanged: it adds nothing to the prompt and makes no model calls.
 - **Costs are estimates.** They come from a price table at the top of [`hooks/register.tsx`](hooks/register.tsx); adjust it if your prices differ. The context percentage assumes a 200k window.
-- The animation is a frame counter that ticks about three times a second, and only while something is working.
+- The animation is a frame counter that ticks about three times a second, and only while something is working or a mood is showing (a sleeping mascot ticks slower).
 
 ## Development
 

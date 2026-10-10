@@ -38,6 +38,7 @@ export type Strings = {
   usingSkill: (skill: string) => string
   organizingTasks: string
   waitingForYou: string
+  needsPermission: string
   using: (tool: string) => string
   file: string
 }
@@ -78,6 +79,7 @@ const en: Strings = {
   usingSkill: s => `Using the ${s} skill`,
   organizingTasks: 'Organizing tasks',
   waitingForYou: 'Waiting for your answer',
+  needsPermission: 'Waiting for your permission',
   using: t => `Using ${t}`,
   file: 'file',
 }
@@ -118,6 +120,7 @@ const pt: Strings = {
   usingSkill: s => `Usando a skill ${s}`,
   organizingTasks: 'Organizando as tarefas',
   waitingForYou: 'Esperando sua resposta',
+  needsPermission: 'Esperando sua permissão',
   using: t => `Usando ${t}`,
   file: 'arquivo',
 }
@@ -158,6 +161,7 @@ const es: Strings = {
   usingSkill: s => `Usando la skill ${s}`,
   organizingTasks: 'Organizando las tareas',
   waitingForYou: 'Esperando tu respuesta',
+  needsPermission: 'Esperando tu permiso',
   using: t => `Usando ${t}`,
   file: 'archivo',
 }

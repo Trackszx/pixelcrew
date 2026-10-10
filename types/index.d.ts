@@ -44,6 +44,16 @@ export type PcMain = {
   done: boolean
 }
 
+/** Efeitos passageiros do mascote da faixa (horários em ms desde a época). */
+export type PcFx = {
+  /** até quando comemorar o fim do turno (confete no 100%) */
+  celebrateUntil: number
+  /** até quando tremer depois de uma ferramenta que falhou */
+  errorUntil: number
+  /** uma pergunta ou um pedido de permissão esperando por você */
+  asking: 'question' | 'permission' | null
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'pixel-crew': {
@@ -54,6 +64,7 @@ declare module 'claude-code' {
       showDone: boolean
       main: PcMain
       batchStart: number
+      fx: PcFx
     }
   }
 }

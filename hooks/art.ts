@@ -200,6 +200,87 @@ export function spriteSvg(role: PcRole | "clawd", px = 2, bob = false, frame = 0
   }
 }
 
+/**
+ * O que o mascote da faixa está fazendo: andando na ponta da barra enquanto
+ * trabalha, pulando entre confetes no 100%, dormindo quando nada acontece, de
+ * braço erguido quando espera por você, tremendo quando algo falhou.
+ */
+export type Pose = 'walk' | 'jump' | 'sleep' | 'alert' | 'shake'
+
+const CONFETTI = ['#F5C542', '#D4537E', '#378ADD', '#639922', '#FFF6C8', '#F07A1E']
+const Z_GLYPH = ['XXXXX', '...X.', '..X..', '.X...', 'XXXXX']
+// colunas do confete e onde cada pedaço começa a cair, espalhados à mão
+const CONFETTI_X = [0, 3, 5, 8, 10, 13, 15, 17, 1, 6, 11, 16]
+const CONFETTI_Y = [3, 0, 5, 2, 6, 1, 4, 0, 6, 3, 2, 5]
+
+/**
+ * O mascote da faixa (o Clawd, ou o boss enquanto delega) numa pose, num
+ * quadro fixo de 18x16 pixels: o tamanho não muda entre poses e quadros, então
+ * ele anda pela barra sem tremer o layout. Confete, "zz" e "!" ocupam o espaço
+ * acima da cabeça.
+ */
+export function mascotSvg(role: 'clawd' | 'boss', pose: Pose, frame = 0, px = 2): Sprite {
+  const g = grid(role)
+  // passos: um par de pernas levanta a cada quadro
+  if (pose === 'walk') for (const x of frame % 2 ? [6, 11] : [4, 13]) box(g, '.', x, x, 14, 14)
+  if (pose === 'sleep') {
+    box(g, 'X', 6, 6, 8, 8)
+    box(g, 'X', 11, 11, 8, 8)
+  }
+  if (role === 'clawd' && pose === 'alert') {
+    box(g, '.', 14, 15, 9, 10)
+    box(g, 'X', 14, 15, 7, 8)
+    box(g, 'X', 15, 15, 5, 6)
+  }
+  if (role === 'clawd' && pose === 'jump') {
+    box(g, '.', 2, 3, 9, 10)
+    box(g, '.', 14, 15, 9, 10)
+    box(g, 'X', 2, 3, 7, 8)
+    box(g, 'X', 14, 15, 7, 8)
+    box(g, 'X', 2, 2, 5, 6)
+    box(g, 'X', 15, 15, 5, 6)
+  }
+  const dy = pose === 'walk' ? -(frame % 2) : pose === 'jump' ? -[0, 1, 2, 1][frame % 4]! : 0
+  const dx = pose === 'shake' ? (frame % 2 ? 1 : -1) : 0
+
+  let rects = ''
+  const put = (x: number, y: number, fill: string) =>
+    (rects += `<rect x="${x}" y="${y}" width="1.02" height="1.02" fill="${fill}"/>`)
+  g.forEach((row, r) =>
+    row.forEach((ch, c) => {
+      const fill = PAL[ch]
+      if (fill) put(c + dx, r + dy, fill)
+    }),
+  )
+  // o que o personagem ocupa neste quadro, para o confete passar por trás
+  const body = (x: number, y: number) => {
+    const ch = g[y - dy]?.[x - dx]
+    return ch !== undefined && ch !== '.'
+  }
+  if (pose === 'jump') {
+    CONFETTI_X.forEach((x, i) => {
+      const y = ((frame + CONFETTI_Y[i]!) % 7) - 1
+      if (!body(x, y)) put(x, y, CONFETTI[i % CONFETTI.length]!)
+    })
+  }
+  if (pose === 'sleep') {
+    const z = (x0: number, y0: number) =>
+      Z_GLYPH.forEach((row, j) => [...row].forEach((ch, i) => ch === 'X' && put(x0 + i, y0 + j, PAL.G!)))
+    // o Z sobe e volta, como quem ronca
+    if (frame % 2) z(13, -1)
+    else z(12, 1)
+  }
+  if (pose === 'alert') {
+    for (const y of [0, 1, 2, 4]) put(17, y, PAL.Q!)
+  }
+  const vh = H + 1
+  return {
+    source: `<svg xmlns="http://www.w3.org/2000/svg" width="${W * px}" height="${vh * px}" viewBox="0 -1 ${W} ${vh}" shape-rendering="crispEdges">${rects}</svg>`,
+    width: W * px,
+    height: vh * px,
+  }
+}
+
 export type BarOpts = {
   ratio: number | null
   color: string

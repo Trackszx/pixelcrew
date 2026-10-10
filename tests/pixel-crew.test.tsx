@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { langOf, strings } from '../hooks/i18n'
-import { activityOf, estimate, roleOf } from '../hooks/register'
+import { activityOf, estimate, glide, resetGlide, roleOf } from '../hooks/register'
 
 const BAND: any = {
   isWorking: true,
@@ -84,7 +84,20 @@ test('describes what the agent is doing, in each language', async () => {
   expect(activityOf('mcp__github__create_issue', {}, pt)).toBe('Usando create_issue')
 })
 
+test('the bar glides up and drops at once', async () => {
+  resetGlide()
+  expect(glide(0.2, 1000)).toBe(0.2)
+  const step = glide(0.8, 1300)
+  expect(step).toBeGreaterThan(0.2)
+  expect(step).toBeLessThan(0.8)
+  expect(glide(0.8, 1600)).toBeGreaterThan(step)
+  // a new turn starts over right away
+  expect(glide(0, 1700)).toBe(0)
+  resetGlide()
+})
+
 test('the band follows the task list', EN, async ($, on) => {
+  resetGlide()
   ;(on as any)('tool.call', { tool: 'TodoWrite' }, async () => ({ result: { oldTodos: [], newTodos: [] } }))
   await ($.tool.call as any)({
     tool: 'TodoWrite',
@@ -183,4 +196,64 @@ test('a new prompt does not inherit the last turn’s 100%', EN, async ($, on) =
     expect(await ui.find({ text: /Thinking/ })).toBeDefined()
     await ui.unmount()
   }
+})
+
+const CONFETTI = /#F5C542|#D4537E|#378ADD|#639922|#FFF6C8|#F07A1E/
+
+test('a finished turn celebrates with confetti', EN, async ($, on) => {
+  on('turn.complete', async () => ({ text: '' }))
+  await $.turn.complete({ answer: 'ok', durationMs: 10, isAborted: false, turnId: 't0', reason: 'answer' } as any)
+
+  const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, isWorking: false } })
+  expect(await ui.find({ text: /^Done$/ })).toBeDefined()
+  const mascot = (await ui.findAll({ type: 'Svg' })).find(s => s.props.alt === 'Claude mascot')
+  expect(String(mascot?.props.source)).toMatch(CONFETTI)
+  await ui.unmount()
+})
+
+test('an aborted turn does not celebrate', EN, async ($, on) => {
+  // the band hides itself: what is beneath it (here, an empty row) draws instead
+  ;(on as any)('ui.render', { component: 'AbovePrompt' }, async ($: any, e: any) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  on('turn.complete', async () => ({ text: '' }))
+  await $.turn.complete({ answer: '', durationMs: 10, isAborted: true, turnId: 't0', reason: 'aborted' } as any)
+  const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, isWorking: false } })
+  expect(await ui.find({ text: /^Done$/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('Claude raises a hand while a question waits for you', EN, async ($, on) => {
+  let seen: unknown
+  ;(on as any)('tool.call', { tool: 'AskUserQuestion' }, async () => {
+    const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+    seen = await ui.find({ text: /Waiting for your answer/ })
+    await ui.unmount()
+    return { result: { questions: [], answers: {} } }
+  })
+  await ($.tool.call as any)({ tool: 'AskUserQuestion', input: { questions: [] } })
+  expect(seen).toBeDefined()
+
+  // answered: the "!" is gone
+  const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  expect(await ui.find({ text: /Waiting for your answer/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a permission prompt shows on the band', PT, async ($, on) => {
+  ;(on as any)('tool.check', async () => ({ decision: 'ask' }))
+  await ($.tool.check as any)({ tool: 'Bash', input: { command: 'rm -rf build' }, tool_use_id: 'tu-1' })
+  const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'desktop', component: 'AbovePrompt', props: BAND })
+  expect(await ui.find({ text: /Esperando sua permissão/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a failed tool turns the bar red for a moment', EN, async ($, on) => {
+  ;(on as any)('tool.call', { tool: 'Bash' }, async () => ({ isError: true, result: 'boom', text: 'boom' }))
+  await ($.tool.call as any)({ tool: 'Bash', input: { command: 'exit 1', description: 'Run the build' } })
+  const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'desktop', component: 'AbovePrompt', props: BAND })
+  const svgs = await ui.findAll({ type: 'Svg' })
+  expect(svgs.some(s => String(s.props.source).includes('#E24B4A'))).toBe(true)
+  await ui.unmount()
 })
