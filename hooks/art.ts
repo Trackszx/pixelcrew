@@ -213,13 +213,13 @@ const Z_GLYPH = ['XXXXX', '...X.', '..X..', '.X...', 'XXXXX']
 const CONFETTI_X = [0, 3, 5, 8, 10, 13, 15, 17, 1, 6, 11, 16]
 const CONFETTI_Y = [3, 0, 5, 2, 6, 1, 4, 0, 6, 3, 2, 5]
 
+export type Pixel = { x: number; y: number; fill: string }
+
 /**
- * O mascote da faixa (o Clawd, ou o boss enquanto delega) numa pose, num
- * quadro fixo de 18x16 pixels: o tamanho não muda entre poses e quadros, então
- * ele anda pela barra sem tremer o layout. Confete, "zz" e "!" ocupam o espaço
- * acima da cabeça.
+ * Os pixels do mascote numa pose e num quadro, no quadro fixo de 18x16 (y de
+ * -1 a 14): o SVG da faixa e o Raster do terminal desenham os mesmos.
  */
-export function mascotSvg(role: 'clawd' | 'boss', pose: Pose, frame = 0, px = 2): Sprite {
+export function mascotPixels(role: 'clawd' | 'boss', pose: Pose, frame = 0): Pixel[] {
   const g = grid(role)
   // o relógio anda a 30 quadros por segundo: passos e pulo trocam a cada 6
   // quadros (5x por segundo) e o confete cai a cada 3, para o Clawd não sair
@@ -248,9 +248,8 @@ export function mascotSvg(role: 'clawd' | 'boss', pose: Pose, frame = 0, px = 2)
   const dy = pose === 'walk' ? -(step % 2) : pose === 'jump' ? -[0, 1, 2, 1][step % 4]! : 0
   const dx = pose === 'shake' ? (Math.floor(frame / 2) % 2 ? 1 : -1) : 0
 
-  let rects = ''
-  const put = (x: number, y: number, fill: string) =>
-    (rects += `<rect x="${x}" y="${y}" width="1.02" height="1.02" fill="${fill}"/>`)
+  const px: Pixel[] = []
+  const put = (x: number, y: number, fill: string) => px.push({ x, y, fill })
   g.forEach((row, r) =>
     row.forEach((ch, c) => {
       const fill = PAL[ch]
@@ -278,6 +277,19 @@ export function mascotSvg(role: 'clawd' | 'boss', pose: Pose, frame = 0, px = 2)
   if (pose === 'alert') {
     for (const y of [0, 1, 2, 4]) put(17, y, PAL.Q!)
   }
+  return px
+}
+
+/**
+ * O mascote da faixa (o Clawd, ou o boss enquanto delega) numa pose, num
+ * quadro fixo de 18x16 pixels: o tamanho não muda entre poses e quadros, então
+ * ele anda pela barra sem tremer o layout. Confete, "zz" e "!" ocupam o espaço
+ * acima da cabeça.
+ */
+export function mascotSvg(role: 'clawd' | 'boss', pose: Pose, frame = 0, px = 2): Sprite {
+  const rects = mascotPixels(role, pose, frame)
+    .map(p => `<rect x="${p.x}" y="${p.y}" width="1.02" height="1.02" fill="${p.fill}"/>`)
+    .join('')
   const vh = H + 1
   return {
     source: `<svg xmlns="http://www.w3.org/2000/svg" width="${W * px}" height="${vh * px}" viewBox="0 -1 ${W} ${vh}" shape-rendering="crispEdges">${rects}</svg>`,
@@ -343,20 +355,161 @@ export function barSvg({ ratio, color, frame = 0 }: BarOpts): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="${ROWS * 4}" viewBox="0 0 ${COLS} ${ROWS}" preserveAspectRatio="none" shape-rendering="crispEdges">${body}</svg>`
 }
 
-/** Versão de terminal da barra: bloco sólido, a parte vazia em cinza. */
-export function barText(cols: number, ratio: number | null): { on: string; off: string } {
-  const n = Math.max(8, cols)
-  const on = ratio === null ? 0 : Math.round(n * Math.max(0, Math.min(1, ratio)))
-  return { on: "█".repeat(on), off: "█".repeat(n - on) }
+// ── Terminal: pixel art in a Raster ─────────────────────────────────────
+// A terminal cell is twice as tall as it is wide, so one cell holds two
+// pixels stacked: "▀" painted with the top pixel as foreground and the bottom
+// pixel as background. A pixel nobody drew is the terminal's own background
+// (bit 24 alone), so the art sits on any theme without a box around it.
+
+export type RasterSpec = { key: string; columns: number; rows: number; cells: string }
+
+const TERM_DEFAULT = 0x01000000
+const UPPER = 0x2580
+const LOWER = 0x2584
+const SPACE = 0x20
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
+const rgb = (hex: string) => parseInt(hex.slice(1), 16)
+
+/** Little-endian u32 words as standard padded base64, the Raster's `cells`. */
+function encodeCells(words: number[]): string {
+  const bytes: number[] = []
+  for (const w of words) bytes.push(w & 255, (w >>> 8) & 255, (w >>> 16) & 255, (w >>> 24) & 255)
+  let out = ''
+  for (let i = 0; i < bytes.length; i += 3) {
+    const n = (bytes[i]! << 16) | ((bytes[i + 1] ?? 0) << 8) | (bytes[i + 2] ?? 0)
+    out += B64[(n >> 18) & 63]! + B64[(n >> 12) & 63]!
+    out += i + 1 < bytes.length ? B64[(n >> 6) & 63]! : '='
+    out += i + 2 < bytes.length ? B64[n & 63]! : '='
+  }
+  return out
 }
 
-export const TERM_SPRITE: Record<PcRole, string> = {
-  developer: '▐▛█▜▌⌨',
-  artist: '▐▛█▜▌✎',
-  researcher: '▐▛█▜▌⌕',
-  worker: '▐▛█▜▌⚒',
-  boss: '▐▛█▜▌♛',
-  tester: '▐▛█▜▌✓',
-  codex: '[▪▪]⚡',
+/** A canvas of hex colours (undefined: nothing drawn) as half-block cells. */
+function halfBlocks(key: string, canvas: Array<Array<string | undefined>>, columns: number): RasterSpec {
+  const rows = Math.max(1, Math.ceil(canvas.length / 2))
+  const words: number[] = []
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < columns; c++) {
+      const top = canvas[r * 2]?.[c]
+      const bottom = canvas[r * 2 + 1]?.[c]
+      if (top && bottom) words.push(UPPER, rgb(top), rgb(bottom))
+      else if (top) words.push(UPPER, rgb(top), TERM_DEFAULT)
+      else if (bottom) words.push(LOWER, rgb(bottom), TERM_DEFAULT)
+      else words.push(SPACE, TERM_DEFAULT, TERM_DEFAULT)
+    }
+  }
+  return { key, columns, rows, cells: encodeCells(words) }
 }
 
+const blank = (w: number, h: number) =>
+  Array.from({ length: h }, () => Array<string | undefined>(w).fill(undefined))
+
+/**
+ * A role's character for the terminal Agents panel: the same sprite the
+ * desktop draws, cropped to the drawing, with one pixel row of headroom so
+ * `bob` can lift it a pixel on odd frames while it works.
+ */
+export function spriteRaster(role: PcRole | 'clawd', key: string, bob = false, frame = 0): RasterSpec {
+  const g = grid(role)
+  let top = H
+  let bottom = 0
+  let left = W
+  let right = 0
+  g.forEach((row, r) =>
+    row.forEach((ch, c) => {
+      if (!PAL[ch]) return
+      top = Math.min(top, r)
+      bottom = Math.max(bottom, r)
+      left = Math.min(left, c)
+      right = Math.max(right, c)
+    }),
+  )
+  const w = right - left + 1
+  const h = bottom - top + 2
+  const dy = bob && frame % 2 === 1 ? -1 : 0
+  const canvas = blank(w, h)
+  g.forEach((row, r) =>
+    row.forEach((ch, c) => {
+      const fill = PAL[ch]
+      const y = r - top + 1 + dy
+      if (fill && canvas[y]) canvas[y]![c - left] = fill
+    }),
+  )
+  return halfBlocks(key, canvas, w)
+}
+
+/** The bar's two pixel rows: track, fill with a highlight on top, and the glint. */
+function barPixels(columns: number, ratio: number | null, color: string, frame: number) {
+  const hi = mix(color, '#FFFFFF', 0.45)
+  const glint = mix(color, '#FFFFFF', 0.8)
+  const rows: Array<Array<string | undefined>> = [Array(columns).fill(TRACK), Array(columns).fill(TRACK)]
+  let from = 0
+  let to = 0
+  if (ratio === null) {
+    const chunk = Math.max(4, Math.round(columns / 5))
+    const span = Math.max(1, columns - chunk)
+    const t = frame % (span * 2)
+    from = t <= span ? t : span * 2 - t
+    to = from + chunk
+  } else {
+    to = Math.round(columns * Math.max(0, Math.min(1, ratio)))
+  }
+  for (let x = from; x < to && x < columns; x++) {
+    rows[0]![x] = hi
+    rows[1]![x] = color
+  }
+  if (to > from) {
+    // the glint: a two-pixel diagonal sweeping across the filled part
+    const period = to - from + 2 + 8
+    const x0 = from + (frame % period) - 2
+    for (let r = 0; r < 2; r++) {
+      const a = x0 + 1 - r
+      if (a >= from && a < to && a < columns) rows[r]![a] = glint
+      if (a + 1 >= from && a + 1 < to && a + 1 < columns) rows[r]![a + 1] = hi
+    }
+  }
+  return rows
+}
+
+/** The progress bar as one Raster row, for the terminal Agents panel. */
+export function barRaster({ key, columns, ratio, color, frame = 0 }: BarOpts & { key: string; columns: number }): RasterSpec {
+  const n = Math.max(1, Math.floor(columns))
+  return halfBlocks(key, barPixels(n, ratio, color, frame), n)
+}
+
+/**
+ * The terminal band: the mascot walking on the bar, at the edge of what is
+ * done, in one Raster. The 18x16 mascot frame takes eight rows; with fewer
+ * rows the top of the frame (confetti, "zz", "!") is cut first, and below
+ * three rows only the bar is drawn.
+ */
+export function bandRaster(opts: {
+  key: string
+  columns: number
+  maxRows: number
+  role: 'clawd' | 'boss'
+  pose: Pose
+  frame?: number
+  ratio: number | null
+  color: string
+}): RasterSpec {
+  const columns = Math.max(1, Math.floor(opts.columns))
+  const frame = opts.frame ?? 0
+  const room = Math.max(1, Math.floor(opts.maxRows))
+  const mascotH = room >= 3 ? Math.min(H + 1, (room - 1) * 2) : 0
+  const canvas = blank(columns, mascotH)
+  if (mascotH > 0) {
+    const ratio = Math.max(0, Math.min(1, opts.ratio ?? 0))
+    const x0 = Math.round(Math.max(0, columns - W) * ratio)
+    // frame rows run from -1 to 14; keep the bottom mascotH of them
+    const y0 = H - mascotH
+    for (const p of mascotPixels(opts.role, opts.pose, frame)) {
+      const x = x0 + p.x
+      const y = p.y - y0
+      if (x >= 0 && x < columns && y >= 0 && y < mascotH) canvas[y]![x] = p.fill
+    }
+  }
+  canvas.push(...barPixels(columns, opts.ratio, opts.color, frame))
+  return halfBlocks(opts.key, canvas, columns)
+}

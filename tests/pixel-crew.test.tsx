@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
+import { barRaster, spriteRaster } from '../hooks/art'
 import { langOf, strings } from '../hooks/i18n'
 import { activityOf, estimate, glide, resetGlide, roleOf } from '../hooks/register'
 
@@ -278,4 +279,87 @@ test('/crew-bar turns the band off and on', EN, async ($, on) => {
   expect(await thinking()).toBeDefined()
   expect((await run('desligar')).text).toMatch(/off/)
   expect((await run('on')).text).toBe('Progress band on')
+})
+
+// ── Terminal pixel art ───────────────────────────────────────────────────
+// A Raster's cells are base64 of little-endian u32 triplets [codePoint, fg, bg];
+// this decoder reads them back so a test can look at single cells.
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+function decodeCells(cells: string): Array<[number, number, number]> {
+  const bytes: number[] = []
+  const clean = cells.replace(/=+$/, '')
+  for (let i = 0; i < clean.length; i += 4) {
+    const n = [0, 1, 2, 3].map(k => (i + k < clean.length ? B64.indexOf(clean[i + k]!) : 0))
+    const v = (n[0]! << 18) | (n[1]! << 12) | (n[2]! << 6) | n[3]!
+    bytes.push((v >> 16) & 255, (v >> 8) & 255, v & 255)
+  }
+  const out: Array<[number, number, number]> = []
+  const u32 = (o: number) => (bytes[o]! | (bytes[o + 1]! << 8) | (bytes[o + 2]! << 16) | (bytes[o + 3]! << 24)) >>> 0
+  for (let o = 0; o + 12 <= bytes.length; o += 12) out.push([u32(o), u32(o + 4), u32(o + 8)])
+  return out
+}
+const DEFAULT = 0x01000000
+const UPPER = 0x2580
+const LOWER = 0x2584
+
+test('a role sprite becomes half-block pixel art in the terminal', async () => {
+  const r = spriteRaster('worker', 'w1')
+  const cells = decodeCells(r.cells)
+  expect(cells).toHaveLength(r.columns * r.rows)
+  // two pixel rows per cell row, one pixel per column
+  expect(r.rows).toBeLessThanOrEqual(8)
+  expect(r.columns).toBeLessThanOrEqual(18)
+  for (const [cp] of cells) expect([UPPER, LOWER, 0x20]).toContain(cp)
+  // the hard hat's yellow and the Clawd clay are both drawn
+  const colors = new Set(cells.flatMap(([, fg, bg]) => [fg, bg]))
+  expect(colors.has(0xf2c230)).toBe(true)
+  expect(colors.has(0xd97757)).toBe(true)
+  // where no pixel is drawn the terminal's own background shows through
+  expect(cells.some(([cp, fg, bg]) => cp === 0x20 && bg === DEFAULT)).toBe(true)
+})
+
+test('the terminal bar fills from the left with a highlight on top', async () => {
+  const r = barRaster({ key: 'b', columns: 20, ratio: 0.5, color: '#639922', frame: 0 })
+  const cells = decodeCells(r.cells)
+  expect(r.rows).toBe(1)
+  expect(cells).toHaveLength(20)
+  // filled half: the bottom pixel is the role colour (or the sweeping glint)
+  const filledBg = cells.slice(0, 10).map(([, , bg]) => bg)
+  expect(filledBg.filter(bg => bg === 0x639922).length).toBeGreaterThan(5)
+  // empty half: the dark track, never the role colour
+  for (const [, fg, bg] of cells.slice(10)) {
+    expect(bg).not.toBe(0x639922)
+    expect(fg).not.toBe(0x639922)
+  }
+  // an indeterminate bar still draws something
+  const busy = decodeCells(barRaster({ key: 'b', columns: 20, ratio: null, color: '#639922', frame: 7 }).cells)
+  expect(busy.some(([, , bg]) => bg === 0x639922)).toBe(true)
+})
+
+test('the terminal panel draws each subagent as pixel art, not glyphs', EN, async ($, on) => {
+  on('agent.spawn', async () => ({ model: 'claude-opus-5-5', agentId: 'agent-1' }))
+  on('turn.complete', async () => ({ text: '' }))
+  await $.agent.spawn({ prompt: 'go', description: 'Organize the files', subagentType: 'general-purpose' } as any)
+  const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'Pane', props: PANE, requestId: 'pixel-crew-agents' })
+  const rasters = await ui.findAll({ type: 'Raster' })
+  // the character and its progress bar
+  expect(rasters.length).toBeGreaterThanOrEqual(2)
+  for (const r of rasters) expect(r.props.columns).toBeLessThanOrEqual(PANE.bodyColumns)
+  expect(await ui.find({ text: /▐▛█▜▌/ })).toBeUndefined()
+  expect(await ui.find({ text: /Organize the files/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the terminal band draws the mascot on a pixel bar within its rows', EN, async ($, on) => {
+  await boss($, on)
+  for (const maxRows of [10, 4]) {
+    const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, maxRows } })
+    const raster = await ui.find({ type: 'Raster' })
+    expect(raster).toBeDefined()
+    expect(raster!.props.rows).toBeLessThanOrEqual(maxRows)
+    expect(raster!.props.columns).toBeLessThanOrEqual(BAND.bodyColumns)
+    expect(await ui.find({ text: /▐▛█▜▌/ })).toBeUndefined()
+    expect(await ui.find({ text: /1\/2/ })).toBeDefined()
+    await ui.unmount()
+  }
 })

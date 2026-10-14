@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { PcAgent, PcFx, PcMain, PcRole, PcTask } from '../types'
-import { barSvg, barText, CLAY, mascotSvg, ROLES, spriteSvg, TERM_SPRITE } from './art'
+import { bandRaster, barRaster, barSvg, CLAY, mascotSvg, ROLES, spriteRaster, spriteSvg } from './art'
 import type { Pose } from './art'
 import { langOf, strings, systemLang } from './i18n'
 import type { Lang, Strings } from './i18n'
@@ -599,15 +599,30 @@ export const register: Register = (on, options) => {
     const openPane = () => $.ui.open({ id: PANE, title: 'Agents' }).catch(() => {})
 
     if (e.surface === 'terminal') {
-      const cols = Math.max(10, Math.min(40, e.props.bodyColumns - title.length - 24))
-      const bar = barText(cols, ratio)
-      const mood = { walk: '', jump: ' ✦', sleep: ' zz', alert: ' !', shake: ' ✗' }[pose]
+      // o mascote anda sobre a barra num Raster de meio-blocos: pixels de
+      // verdade, como no app, na altura que a faixa permite
+      const { Raster } = els
+      const tail = pct.length + (count === '' ? 0 : count.length + 1) + (crew.length > 0 ? 5 : 0) + 3
+      const room = e.props.bodyColumns - tail
+      const columns = Math.max(12, Math.min(60, Math.floor(room * 0.6)))
+      const art = bandRaster({
+        key: 'band',
+        columns,
+        maxRows: e.props.maxRows,
+        role: delegating ? 'boss' : 'clawd',
+        pose,
+        frame: f,
+        ratio,
+        color,
+      })
       return (
-        <Box flexDirection="row" gap={1}>
-          <Text color={color}>{`${delegating ? '▐▛█▜▌♛' : '▐▛█▜▌'}${mood}`}</Text>
-          <Text bold wrap="truncate">{title}</Text>
-          <Text color={color}>{bar.on}</Text>
-          <Text dimColor>{bar.off}</Text>
+        <Box flexDirection="row" gap={1} alignItems="flex-end">
+          <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+            <Text bold wrap="truncate">{title}</Text>
+          </Box>
+          <Box flexShrink={0}>
+            <Raster {...art} />
+          </Box>
           <Text bold>{pct}</Text>
           {count !== '' && <Text dimColor>{count}</Text>}
           {crew.length > 0 && <Button key="crew" plain label={`×${crew.length}`} onPress={openPane} />}
@@ -701,27 +716,30 @@ export const register: Register = (on, options) => {
       const sub = `${a.role === 'codex' ? 'Codex' : shortModel(a.model)}${effortLabel(a.effort)}`
 
       if (isTerm) {
-        const bar = barText(Math.max(10, e.props.bodyColumns - 4), ratio)
+        // o personagem e a barra em Raster de meio-blocos: o mesmo desenho do
+        // app, pixel a pixel, no lugar dos glifos de uma cor só
+        const { Raster } = els
+        const art = spriteRaster(a.role, `s-${a.id}`, a.status === 'running', Math.floor(f / 9))
+        const barCols = Math.max(8, e.props.bodyColumns - art.columns - 2)
         return (
-          <Box key={`a-${a.id}`} flexDirection="column" marginBottom={1}>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Box flexDirection="row" gap={1}>
-                <Text color={info.color}>{TERM_SPRITE[a.role]}</Text>
+          <Box key={`a-${a.id}`} flexDirection="row" gap={1} marginBottom={1}>
+            <Box flexShrink={0}>
+              <Raster {...art} />
+            </Box>
+            <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+              <Box flexDirection="row" justifyContent="space-between" gap={1}>
                 <Text bold wrap="truncate">{a.description}</Text>
+                <Text color={markColor}>{mark}</Text>
               </Box>
-              <Text color={markColor}>{mark}</Text>
-            </Box>
-            <Box flexDirection="row" gap={1}>
-              <Text color={info.color}>{info.label}</Text>
-              <Text dimColor>{sub}</Text>
-            </Box>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text dimColor wrap="truncate">{progress}{phase ? ` · ${phase}` : ''}</Text>
-              <Text dimColor>{stats}</Text>
-            </Box>
-            <Box flexDirection="row">
-              <Text color={info.color}>{bar.on}</Text>
-              <Text dimColor>{bar.off}</Text>
+              <Box flexDirection="row" gap={1}>
+                <Text color={info.color}>{info.label}</Text>
+                <Text dimColor>{sub}</Text>
+              </Box>
+              <Box flexDirection="row" justifyContent="space-between" gap={1}>
+                <Text dimColor wrap="truncate">{progress}{phase ? ` · ${phase}` : ''}</Text>
+                <Text dimColor>{stats}</Text>
+              </Box>
+              <Raster {...barRaster({ key: `b-${a.id}`, columns: barCols, ratio, color: info.color, frame: f })} />
             </Box>
           </Box>
         )

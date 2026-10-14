@@ -41,6 +41,8 @@ A pixel-art progress bar with the Claude mascot, and a side panel that turns you
 
 The plugin needs a Claude Code build with function-hook plugins (the plugin API is early access). It was built and tested on Claude Code **2.1.293**, in the desktop app's Code tab and in the terminal.
 
+In the terminal the band and the Agents panel draw the same pixel art as the desktop app, two pixels per cell with half blocks (`▀`), through Claude Code's `Raster` element (tested on **2.1.299**). The band is as tall as the mascot (eight rows) when there is room, and drops the space above the mascot's head first when there is not.
+
 In a terminal session of Claude Code:
 
 ```
