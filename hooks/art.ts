@@ -302,6 +302,8 @@ export type BarOpts = {
   ratio: number | null
   color: string
   frame?: number
+  /** a finished agent's bar: no sweeping glint, so every frame draws the same */
+  still?: boolean
 }
 
 const COLS = 60
@@ -315,6 +317,11 @@ function mix(hex: string, to: string, t: number): string {
   return "#" + ((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, "0")
 }
 
+/** A finished agent's colour: the role colour mostly greyed, a hint of it left. */
+export function fade(color: string): string {
+  return mix(color, '#7A7F88', 0.7)
+}
+
 /**
  * Barra de carregamento "brilho que passa": preenchimento sólido com uma linha
  * de brilho em cima e um reflexo diagonal de pixels que varre a parte cheia a
@@ -322,7 +329,7 @@ function mix(hex: string, to: string, t: number): string {
  * (um bloco que vai e volta). Desenhada larga e sem proporção fixa, ela estica
  * até a largura do espaço, na altura que o elemento pedir.
  */
-export function barSvg({ ratio, color, frame = 0 }: BarOpts): string {
+export function barSvg({ ratio, color, frame = 0, still = false }: BarOpts): string {
   const hi = mix(color, "#FFFFFF", 0.45)
   const glint = mix(color, "#FFFFFF", 0.8)
   const rect = (x: number, y: number, w: number, h: number, fill: string) =>
@@ -343,13 +350,15 @@ export function barSvg({ ratio, color, frame = 0 }: BarOpts): string {
   let body = rect(0, 0, COLS, ROWS, TRACK)
   if (to > from) {
     body += rect(from, 0, to - from, ROWS, color) + rect(from, 0, to - from, 1, hi)
-    const period = to - from + ROWS + 8
-    const x0 = from + (frame % period) - ROWS
-    for (let r = 0; r < ROWS; r++) {
-      const a = x0 + ROWS - 1 - r
-      const b = a + 1
-      if (a >= from && a < to) body += rect(a, r, 1, 1, glint)
-      if (b >= from && b < to) body += rect(b, r, 1, 1, hi)
+    if (!still) {
+      const period = to - from + ROWS + 8
+      const x0 = from + (frame % period) - ROWS
+      for (let r = 0; r < ROWS; r++) {
+        const a = x0 + ROWS - 1 - r
+        const b = a + 1
+        if (a >= from && a < to) body += rect(a, r, 1, 1, glint)
+        if (b >= from && b < to) body += rect(b, r, 1, 1, hi)
+      }
     }
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="${ROWS * 4}" viewBox="0 0 ${COLS} ${ROWS}" preserveAspectRatio="none" shape-rendering="crispEdges">${body}</svg>`
@@ -407,7 +416,7 @@ function halfBlocks(key: string, canvas: Array<Array<string | undefined>>, colum
 
 
 /** The bar's two pixel rows: track, fill with a highlight on top, and the glint. */
-function barPixels(columns: number, ratio: number | null, color: string, frame: number) {
+function barPixels(columns: number, ratio: number | null, color: string, frame: number, still = false) {
   const hi = mix(color, '#FFFFFF', 0.45)
   const glint = mix(color, '#FFFFFF', 0.8)
   const rows: Array<Array<string | undefined>> = [Array(columns).fill(TRACK), Array(columns).fill(TRACK)]
@@ -426,7 +435,7 @@ function barPixels(columns: number, ratio: number | null, color: string, frame: 
     rows[0]![x] = hi
     rows[1]![x] = color
   }
-  if (to > from) {
+  if (to > from && !still) {
     // the glint: a two-pixel diagonal sweeping across the filled part
     const period = to - from + 2 + 8
     const x0 = from + (frame % period) - 2
@@ -440,9 +449,9 @@ function barPixels(columns: number, ratio: number | null, color: string, frame: 
 }
 
 /** The progress bar as one Raster row, for the terminal Agents panel. */
-export function barRaster({ key, columns, ratio, color, frame = 0 }: BarOpts & { key: string; columns: number }): RasterSpec {
+export function barRaster({ key, columns, ratio, color, frame = 0, still = false }: BarOpts & { key: string; columns: number }): RasterSpec {
   const n = fitColumns(columns)
-  return halfBlocks(key, barPixels(n, ratio, color, frame), n)
+  return halfBlocks(key, barPixels(n, ratio, color, frame, still), n)
 }
 
 // ── Terminal: one line, quadrant pixels ─────────────────────────────────
@@ -462,6 +471,7 @@ export const LINE_ART: Record<string, [string, string]> = {
   codex: ['OOAOOOOAOO', 'O.OO..OO.O'],
 }
 const LINE_W = 10
+const EYE_ON_BODY = new Set([PAL.E!])
 
 // tl=8, tr=4, bl=2, br=1: the block whose set quadrants are the foreground
 const QUADRANT = [0x20, 0x2597, 0x2596, 0x2584, 0x259d, 0x2590, 0x259e, 0x259f, 0x2598, 0x259a, 0x258c, 0x2599, 0x2580, 0x259c, 0x259b, 0x2588]
@@ -500,13 +510,15 @@ function linePixels(name: keyof typeof LINE_ART, body: string): [Array<string | 
 /**
  * A role's one-line character for the terminal Agents panel: the Clawd in
  * the role's colour (the codex robot is its own drawing), five cells wide.
- * While it works its legs step.
+ * While it works its legs step; once finished it is greyed out.
  */
-export function spriteRaster(role: PcRole | 'clawd', key: string, walking = false, frame = 0): RasterSpec {
+export function spriteRaster(role: PcRole | 'clawd', key: string, walking = false, frame = 0, faded = false): RasterSpec {
   const name = role === 'codex' ? 'codex' : role === 'boss' ? 'boss' : walking && Math.floor(frame / 6) % 2 ? 'step' : 'clawd'
   const body = role === 'clawd' || role === 'codex' ? CLAY : ROLES[role].color
   const [top, bottom] = linePixels(name, body)
-  return quadrants(key, top, bottom)
+  // a finished agent greys out, its dark eyes kept
+  const tone = (p: string | undefined) => (p && faded && !EYE_ON_BODY.has(p) ? fade(p) : p)
+  return quadrants(key, top.map(tone), bottom.map(tone))
 }
 
 /**

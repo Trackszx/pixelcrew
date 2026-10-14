@@ -507,3 +507,50 @@ test('the one-line band puts the mascot at the edge of the fill', async () => {
   expect(cells.slice(0, 15).filter(([, , bg]) => bg === 0x639922).length).toBeGreaterThan(10)
   for (const [, fg, bg] of cells.slice(25)) expect([fg, bg]).not.toContain(0x639922)
 })
+
+test('a still bar has no sweeping glint: every frame is the same', async () => {
+  const still = (frame: number) => barRaster({ key: 'b', columns: 30, ratio: 1, color: '#639922', frame, still: true }).cells
+  expect(still(5)).toBe(still(0))
+  expect(still(17)).toBe(still(0))
+  // #639922 mixed 80% toward white: the glint's colour, absent from a still bar
+  const GLINT = 0xe0ebd3
+  const cells = decodeCells(still(5))
+  for (const [, fg, bg] of cells) expect([fg, bg]).not.toContain(GLINT)
+  // a moving bar still sweeps
+  expect(barRaster({ key: 'b', columns: 30, ratio: 1, color: '#639922', frame: 5 }).cells).not.toBe(still(5))
+})
+
+test('finished agents are grey and still; running ones keep their colour', EN, async ($, on) => {
+  let n = 0
+  on('agent.spawn', async () => ({ model: 'claude-opus-5-5', agentId: 'ag-' + ++n }))
+  on('turn.complete', async () => ({ text: '' }))
+  // two workers (green): the first finishes, the second keeps running
+  await $.agent.spawn({ prompt: 'a', description: 'Organize the files', subagentType: 'general-purpose' } as any)
+  await $.agent.spawn({ prompt: 'b', description: 'Organize the notes', subagentType: 'general-purpose' } as any)
+  await $.turn.complete({ agentId: 'ag-1', answer: 'ok', durationMs: 10, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  const GREEN = 0x639922
+
+  // terminal: the finished row's character and bar carry no role green
+  const term = await $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'Pane', props: { ...PANE, bodyColumns: 60 }, requestId: 'pixel-crew-agents' })
+  const rasters = await term.findAll({ type: 'Raster' })
+  const colors = (k: string) => {
+    const r = rasters.find(x => x.props['key'] === k)
+    return new Set(decodeCells(String(r!.props.cells)).flatMap(([, fg, bg]) => [fg, bg]))
+  }
+  // the worker green mixed 70% toward a neutral grey
+  const FADED = 0x738769
+  expect(colors('s-ag-1').has(GREEN)).toBe(false)
+  expect(colors('b-ag-1').has(GREEN)).toBe(false)
+  expect(colors('b-ag-1').has(FADED)).toBe(true)
+  // the running character keeps its colour (its bar may still be empty at the start)
+  expect(colors('s-ag-2').has(GREEN)).toBe(true)
+  await term.unmount()
+
+  // desktop: the finished row's bar is drawn without the role green too
+  const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'desktop', component: 'Pane', props: PANE, requestId: 'pixel-crew-agents' })
+  const bars = (await ui.findAll({ type: 'Svg' })).filter(s => /progress/i.test(String(s.props.alt)))
+  const finished = bars.find(s => /files/.test(String(s.props.alt)))
+  expect(String(finished!.props.source)).not.toMatch(/#639922/i)
+  expect(String(finished!.props.source)).toMatch(/#738769/i)
+  await ui.unmount()
+})

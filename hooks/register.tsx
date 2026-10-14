@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { PcAgent, PcFx, PcMain, PcRole, PcTask } from '../types'
-import { bandRaster, barRaster, barSvg, CLAY, mascotSvg, MAX_RASTER_COLUMNS, ROLES, spriteRaster, spriteSvg } from './art'
+import { bandRaster, barRaster, barSvg, CLAY, fade, mascotSvg, MAX_RASTER_COLUMNS, ROLES, spriteRaster, spriteSvg } from './art'
 
 // terminal art budgets: the fewest columns worth drawing a band, a panel bar or
 // the text beside a sprite, and the title room the band keeps before its art
@@ -740,6 +740,10 @@ export const register: Register = (on, options) => {
       const mark = a.status === 'running' ? '●' : a.status === 'done' ? '✓' : '✗'
       const markColor = a.status === 'running' ? CLAY : a.status === 'done' ? '#3FB27F' : '#E24B4A'
       const sub = `${a.role === 'codex' ? 'Codex' : shortModel(a.model)}${effortLabel(a.effort)}`
+      // a finished agent's row goes still and grey: no sweeping glint, the role colour faded
+      const done = a.status !== 'running'
+      const barColor = done ? fade(info.color) : info.color
+      const barFrame = done ? 0 : f
 
       if (isTerm) {
         // o personagem numa linha, em pixels de quadrante e na cor do papel,
@@ -747,7 +751,7 @@ export const register: Register = (on, options) => {
         const { Raster } = els
         // o personagem só entra se sobrar espaço para o texto ao lado; a
         // barra ocupa o resto da linha, até o limite de colunas do Raster
-        const sprite = spriteRaster(a.role, `s-${a.id}`, a.status === 'running', f)
+        const sprite = spriteRaster(a.role, `s-${a.id}`, !done, f, done)
         const width = Math.max(0, e.props.bodyColumns)
         const art = width >= sprite.columns + 1 + TEXT_MIN ? sprite : null
         const barCols = Math.min(MAX_RASTER_COLUMNS, art ? width - art.columns - 1 : width)
@@ -772,7 +776,7 @@ export const register: Register = (on, options) => {
                 <Text dimColor>{stats}</Text>
               </Box>
               {barCols >= BAR_MIN && (
-                <Raster {...barRaster({ key: `b-${a.id}`, columns: barCols, ratio, color: info.color, frame: f })} />
+                <Raster {...barRaster({ key: `b-${a.id}`, columns: barCols, ratio, color: barColor, frame: barFrame, still: done })} />
               )}
             </Box>
           </Box>
@@ -800,7 +804,7 @@ export const register: Register = (on, options) => {
               <Text dimColor>{stats}</Text>
             </Box>
             <Box marginTop={1} overflow="hidden">
-              <Svg source={barSvg({ ratio, color: info.color, frame: f })} alt={L.altProgress(a.description)} height={6} />
+              <Svg source={barSvg({ ratio, color: barColor, frame: barFrame, still: done })} alt={L.altProgress(a.description)} height={6} />
             </Box>
           </Box>
         </Box>
