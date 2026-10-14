@@ -41,7 +41,7 @@ A pixel-art progress bar with the Claude mascot, and a side panel that turns you
 
 The plugin needs a Claude Code build with function-hook plugins (the plugin API is early access). It was built and tested on Claude Code **2.1.293**, in the desktop app's Code tab and in the terminal.
 
-In the terminal everything stays one line tall: the band is a single row in which the mascot, drawn in quadrant pixels (`▘▝▖▗▀▄▌▐▚▞▛▜▙▟█`, 2×2 per cell), walks inside its own progress bar, and each row of the Agents panel starts with a one-line character in its role's colour (codex is a white robot). It needs Claude Code's `Raster` element (tested on **2.1.299**).
+In the terminal everything stays one line tall: the band is a single row in which the mascot, drawn in quadrant pixels (`▘▝▖▗▀▄▌▐▚▞▛▜▙▟█`, 2×2 per cell), walks inside its own progress bar, after the Clawd's glyph icon (`▐▛█▜▌`, crowned `♛` while it delegates, with a mood mark: `✦` done, `zz` asleep, `!` waiting, `✗` failed), and each row of the Agents panel starts with a one-line character in its role's colour (codex is a white robot). It needs Claude Code's `Raster` element (tested on **2.1.299**).
 
 In a terminal session of Claude Code:
 

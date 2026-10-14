@@ -624,6 +624,12 @@ export const register: Register = (on, options) => {
       if (showCount) budget -= count.length + 1
       const showCrew = crew.length > 0 && budget >= crewLabel.length + 1
       if (showCrew) budget -= crewLabel.length + 1
+      // o ícone de quem trabalha, antes da barra: o Clawd em glifos (de coroa
+      // enquanto delega) e o humor do momento
+      const mood = { walk: '', jump: ' ✦', sleep: ' zz', alert: ' !', shake: ' ✗' }[pose]
+      const icon = `${delegating ? '▐▛█▜▌♛' : '▐▛█▜▌'}${mood}`
+      const showIcon = budget >= icon.length + 1 + 1 + TITLE_MIN
+      if (showIcon) budget -= icon.length + 1
       // o título (e a arte ao lado dele) ocupa o resto, menos a coluna antes da porcentagem
       const showTitle = budget >= 1
       const room = budget - 1
@@ -644,6 +650,7 @@ export const register: Register = (on, options) => {
               <Text bold wrap="truncate">{title}</Text>
             </Box>
           )}
+          {showIcon && <Text color={color}>{icon}</Text>}
           {art && (
             <Box flexShrink={0}>
               <Raster {...art} />

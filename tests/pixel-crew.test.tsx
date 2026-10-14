@@ -375,10 +375,22 @@ test('the terminal band is one line: the mascot walks inside the bar', EN, async
     // the mascot walks inside the bar's own line
     expect(raster!.props.rows).toBe(1)
     expect(raster!.props.columns).toBeLessThanOrEqual(BAND.bodyColumns)
-    expect(await ui.find({ text: /▐▛█▜▌/ })).toBeUndefined()
+    // before the bar, the old glyph icon of who is working: the boss, crowned, in purple
+    const icon = await ui.find({ type: 'Text', text: /▐▛█▜▌/ })
+    expect(icon?.text).toMatch(/^▐▛█▜▌♛/)
+    expect(String(icon?.props.color).toLowerCase()).toBe('#6a4be0')
     expect(await ui.find({ text: /1\/2/ })).toBeDefined()
     await ui.unmount()
   }
+})
+
+test('without subagents the band icon is the plain Clawd glyph', EN, async ($, on) => {
+  const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, isWorking: true } })
+  const icon = await ui.find({ type: 'Text', text: /▐▛█▜▌/ })
+  expect(icon).toBeDefined()
+  expect(icon!.text).not.toMatch(/♛/)
+  expect(String(icon!.props.color).toLowerCase()).toBe('#d97757')
+  await ui.unmount()
 })
 
 test('the terminal bar puts a highlight on top of the fill and never passes 512 columns', async () => {
@@ -423,6 +435,7 @@ test('the terminal band shows the mascot, fits narrow bands and draws nothing wi
         ...(await ui.findAll({ text: /^\d+\/\d+$/ })).map(t => String(t.text).length),
         ...(await ui.findAll({ type: 'Button' })).map(b => String(b.props.label).length),
         ...rasters.map(r => Number(r.props.columns)),
+        ...(await ui.findAll({ type: 'Text', text: /▐▛█▜▌/ })).map(t => String(t.text).length),
       ]
       // the title, when drawn, costs at least its gap even when truncated to nothing
       const titleGap = (await ui.find({ text: /Waiting for/ })) ? 1 : 0
