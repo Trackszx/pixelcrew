@@ -27,9 +27,6 @@ export type Strings = {
   cmdBar: string
   barOn: string
   barOff: string
-  cmdSize: string
-  sizeSmall: string
-  sizeFull: string
   altBoss: string
   altMascot: string
   altProgress: (what: string) => string
@@ -74,9 +71,6 @@ const en: Strings = {
   cmdBar: 'Turn the progress band on or off (on, off, or nothing to toggle)',
   barOn: 'Progress band on',
   barOff: 'Progress band off. /crew-bar turns it back on',
-  cmdSize: 'Small or full pixel art in the terminal (small, full, or nothing to switch)',
-  sizeSmall: 'Terminal art: small',
-  sizeFull: 'Terminal art: full size',
   altBoss: 'Claude as the boss',
   altMascot: 'Claude mascot',
   altProgress: what => `Progress: ${what}`,
@@ -121,9 +115,6 @@ const pt: Strings = {
   cmdBar: 'Liga ou desliga a barra de progresso (on, off, ou nada para alternar)',
   barOn: 'Barra de progresso ligada',
   barOff: 'Barra de progresso desligada. /crew-bar liga de novo',
-  cmdSize: 'Arte pequena ou grande no terminal (small, full, ou nada para alternar)',
-  sizeSmall: 'Arte do terminal: pequena (small)',
-  sizeFull: 'Arte do terminal: tamanho cheio (full)',
   altBoss: 'Claude como boss',
   altMascot: 'Mascote do Claude',
   altProgress: what => `Progresso: ${what}`,
@@ -168,9 +159,6 @@ const es: Strings = {
   cmdBar: 'Activa o desactiva la barra de progreso (on, off, o nada para alternar)',
   barOn: 'Barra de progreso activada',
   barOff: 'Barra de progreso desactivada. /crew-bar la vuelve a activar',
-  cmdSize: 'Arte pequeña o grande en el terminal (small, full, o nada para alternar)',
-  sizeSmall: 'Arte del terminal: pequeña (small)',
-  sizeFull: 'Arte del terminal: tamaño completo (full)',
   altBoss: 'Claude como jefe',
   altMascot: 'Mascota de Claude',
   altProgress: what => `Progreso: ${what}`,

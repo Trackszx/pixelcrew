@@ -33,7 +33,6 @@ const now = atom({ plugin: 'pixel-crew', key: 'now' } as const, 0)
 const frame = atom({ plugin: 'pixel-crew', key: 'frame' } as const, 0)
 const showDone = atom({ plugin: 'pixel-crew', key: 'showDone' } as const, true)
 const bandOn = atom({ plugin: 'pixel-crew', key: 'bandOn' } as const, true)
-const artSize = atom({ plugin: 'pixel-crew', key: 'artSize' } as const, 'small' as 'small' | 'full')
 const IDLE: PcMain = { activity: '', steps: 0, tools: 0, working: false, done: false }
 const main = atom({ plugin: 'pixel-crew', key: 'main' } as const, IDLE)
 // início do lote atual de subagents: os que começaram desde que nenhum rodava
@@ -257,8 +256,6 @@ export const register: Register = (on, options) => {
   const fixed = choice === 'auto' ? undefined : langOf(choice)
   let lang: Lang = fixed ?? systemLang() ?? 'en'
   L = strings(lang)
-  // the terminal art size: the option sets the default, /crew-size the session and after
-  const sizeOption: 'small' | 'full' = String(options.size ?? 'small') === 'full' ? 'full' : 'small'
 
   on('session.start', async ($, e, next) => {
     if (!fixed) {
@@ -281,10 +278,6 @@ export const register: Register = (on, options) => {
     // a escolha do /crew-bar vale para as próximas sessões também
     const saved = await $.store.get('bandOn').catch(() => undefined)
     if (typeof saved === 'boolean') await update($, bandOn, () => saved)
-    await $.command.register({ name: 'crew-size', description: L.cmdSize })
-    const savedSize = await $.store.get('artSize').catch(() => undefined)
-    const size = savedSize === 'small' || savedSize === 'full' ? savedSize : sizeOption
-    await update($, artSize, () => size)
 
     // Relógio da animação: troca o quadro 30x por segundo enquanto há agent
     // rodando ou tarefa em andamento; parado, não escreve nada.
@@ -361,21 +354,6 @@ export const register: Register = (on, options) => {
     await update($, bandOn, () => want)
     await $.store.set('bandOn', want).catch(() => {})
     return { text: want ? L.barOn : L.barOff }
-  })
-
-  // /crew-size alterna; /crew-size small|full escolhe, e vale para as próximas sessões
-  on('command.run', { command: 'crew-size' }, async ($, e) => {
-    const arg = e.args.trim().toLowerCase()
-    const want: 'small' | 'full' = /^(full|big|large|grande|chei|complet|normal)/.test(arg)
-      ? 'full'
-      : /^(small|mini|tiny|compact|pequen|peque)/.test(arg)
-        ? 'small'
-        : (await read($, artSize)) === 'small'
-          ? 'full'
-          : 'small'
-    await update($, artSize, () => want)
-    await $.store.set('artSize', want).catch(() => {})
-    return { text: want === 'full' ? L.sizeFull : L.sizeSmall }
   })
 
   on('command.run', { command: 'crew-clear' }, async $ => {
@@ -650,9 +628,7 @@ export const register: Register = (on, options) => {
       const showTitle = budget >= 1
       const room = budget - 1
       const columns = Math.min(60, Math.floor(room * 0.6), room - 1 - TITLE_MIN)
-      const size = await read($, artSize)
       const art = columns < BAND_MIN ? null : bandRaster({
-        size,
         key: 'band',
         columns,
         maxRows: e.props.maxRows,
@@ -726,7 +702,6 @@ export const register: Register = (on, options) => {
     const els: any = $.ui.resolve(e)
     const { Box, Text, Button } = els
     const isTerm = e.surface === 'terminal'
-    const size = await read($, artSize)
     const clock = Math.max(t, Date.now())
 
     const running = crew.filter(a => a.status === 'running')
@@ -773,7 +748,7 @@ export const register: Register = (on, options) => {
         const { Raster } = els
         // o personagem só entra se sobrar espaço para o texto ao lado; a
         // barra ocupa o resto da linha, até o limite de colunas do Raster
-        const sprite = spriteRaster(a.role, `s-${a.id}`, a.status === 'running', Math.floor(f / 9), size)
+        const sprite = spriteRaster(a.role, `s-${a.id}`, a.status === 'running', Math.floor(f / 9))
         const width = Math.max(0, e.props.bodyColumns)
         const art = width >= sprite.columns + 1 + TEXT_MIN ? sprite : null
         const barCols = Math.min(MAX_RASTER_COLUMNS, art ? width - art.columns - 1 : width)

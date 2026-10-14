@@ -1,6 +1,6 @@
 {
   "name": "pixel-crew",
-  "version": "0.5.0",
+  "version": "0.4.1",
   "description": "Pixel-art progress bar with the Claude mascot and a side panel that turns your subagents into a crew of characters (developer, artist, researcher, tester, Codex...).",
   "author": {
     "name": "Trackszx"
@@ -26,16 +26,6 @@
         "en",
         "pt",
         "es"
-      ]
-    },
-    "size": {
-      "type": "string",
-      "title": "Terminal art size",
-      "description": "How big the band's mascot and the Agents panel's characters are in a terminal: small (half size: the band takes five rows) or full (the band takes nine). /crew-size switches it in a session and keeps the choice.",
-      "default": "small",
-      "options": [
-        "small",
-        "full"
       ]
     }
   },
