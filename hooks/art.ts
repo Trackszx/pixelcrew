@@ -364,6 +364,9 @@ export function barSvg({ ratio, color, frame = 0 }: BarOpts): string {
 export type RasterSpec = { key: string; columns: number; rows: number; cells: string }
 
 const TERM_DEFAULT = 0x01000000
+// the widest Raster the terminal surface accepts
+export const MAX_RASTER_COLUMNS = 512
+const fitColumns = (n: number) => Math.max(1, Math.min(MAX_RASTER_COLUMNS, Math.floor(n)))
 const UPPER = 0x2580
 const LOWER = 0x2584
 const SPACE = 0x20
@@ -474,7 +477,7 @@ function barPixels(columns: number, ratio: number | null, color: string, frame: 
 
 /** The progress bar as one Raster row, for the terminal Agents panel. */
 export function barRaster({ key, columns, ratio, color, frame = 0 }: BarOpts & { key: string; columns: number }): RasterSpec {
-  const n = Math.max(1, Math.floor(columns))
+  const n = fitColumns(columns)
   return halfBlocks(key, barPixels(n, ratio, color, frame), n)
 }
 
@@ -494,7 +497,7 @@ export function bandRaster(opts: {
   ratio: number | null
   color: string
 }): RasterSpec {
-  const columns = Math.max(1, Math.floor(opts.columns))
+  const columns = fitColumns(opts.columns)
   const frame = opts.frame ?? 0
   const room = Math.max(1, Math.floor(opts.maxRows))
   const mascotH = room >= 3 ? Math.min(H + 1, (room - 1) * 2) : 0

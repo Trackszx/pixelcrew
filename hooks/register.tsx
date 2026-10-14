@@ -2,7 +2,14 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { PcAgent, PcFx, PcMain, PcRole, PcTask } from '../types'
-import { bandRaster, barRaster, barSvg, CLAY, mascotSvg, ROLES, spriteRaster, spriteSvg } from './art'
+import { bandRaster, barRaster, barSvg, CLAY, mascotSvg, MAX_RASTER_COLUMNS, ROLES, spriteRaster, spriteSvg } from './art'
+
+// terminal art budgets: the fewest columns worth drawing a band, a panel bar or
+// the text beside a sprite, and the title room the band keeps before its art
+const BAND_MIN = 12
+const BAR_MIN = 4
+const TEXT_MIN = 12
+const TITLE_MIN = 8
 import type { Pose } from './art'
 import { langOf, strings, systemLang } from './i18n'
 import type { Lang, Strings } from './i18n'
@@ -599,13 +606,16 @@ export const register: Register = (on, options) => {
     const openPane = () => $.ui.open({ id: PANE, title: 'Agents' }).catch(() => {})
 
     if (e.surface === 'terminal') {
+      // sem linha nenhuma a faixa não desenha nada: quem está por baixo decide
+      if (e.props.maxRows <= 0) return next(e)
       // o mascote anda sobre a barra num Raster de meio-blocos: pixels de
-      // verdade, como no app, na altura que a faixa permite
+      // verdade, como no app, na altura que a faixa permite. A arte só entra
+      // quando cabe com o texto ao lado; numa faixa estreita fica só o texto
       const { Raster } = els
       const tail = pct.length + (count === '' ? 0 : count.length + 1) + (crew.length > 0 ? 5 : 0) + 3
       const room = e.props.bodyColumns - tail
-      const columns = Math.max(12, Math.min(60, Math.floor(room * 0.6)))
-      const art = bandRaster({
+      const columns = Math.min(60, Math.floor(room * 0.6), room - TITLE_MIN)
+      const art = columns < BAND_MIN ? null : bandRaster({
         key: 'band',
         columns,
         maxRows: e.props.maxRows,
@@ -620,9 +630,11 @@ export const register: Register = (on, options) => {
           <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
             <Text bold wrap="truncate">{title}</Text>
           </Box>
-          <Box flexShrink={0}>
-            <Raster {...art} />
-          </Box>
+          {art && (
+            <Box flexShrink={0}>
+              <Raster {...art} />
+            </Box>
+          )}
           <Text bold>{pct}</Text>
           {count !== '' && <Text dimColor>{count}</Text>}
           {crew.length > 0 && <Button key="crew" plain label={`×${crew.length}`} onPress={openPane} />}
@@ -719,13 +731,19 @@ export const register: Register = (on, options) => {
         // o personagem e a barra em Raster de meio-blocos: o mesmo desenho do
         // app, pixel a pixel, no lugar dos glifos de uma cor só
         const { Raster } = els
-        const art = spriteRaster(a.role, `s-${a.id}`, a.status === 'running', Math.floor(f / 9))
-        const barCols = Math.max(8, e.props.bodyColumns - art.columns - 2)
+        // o personagem só entra se sobrar espaço para o texto ao lado; a
+        // barra ocupa o resto da linha, até o limite de colunas do Raster
+        const sprite = spriteRaster(a.role, `s-${a.id}`, a.status === 'running', Math.floor(f / 9))
+        const width = Math.max(0, e.props.bodyColumns)
+        const art = width >= sprite.columns + 1 + TEXT_MIN ? sprite : null
+        const barCols = Math.min(MAX_RASTER_COLUMNS, art ? width - art.columns - 1 : width)
         return (
           <Box key={`a-${a.id}`} flexDirection="row" gap={1} marginBottom={1}>
-            <Box flexShrink={0}>
-              <Raster {...art} />
-            </Box>
+            {art && (
+              <Box flexShrink={0}>
+                <Raster {...art} />
+              </Box>
+            )}
             <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
               <Box flexDirection="row" justifyContent="space-between" gap={1}>
                 <Text bold wrap="truncate">{a.description}</Text>
@@ -739,7 +757,9 @@ export const register: Register = (on, options) => {
                 <Text dimColor wrap="truncate">{progress}{phase ? ` · ${phase}` : ''}</Text>
                 <Text dimColor>{stats}</Text>
               </Box>
-              <Raster {...barRaster({ key: `b-${a.id}`, columns: barCols, ratio, color: info.color, frame: f })} />
+              {barCols >= BAR_MIN && (
+                <Raster {...barRaster({ key: `b-${a.id}`, columns: barCols, ratio, color: info.color, frame: f })} />
+              )}
             </Box>
           </Box>
         )

@@ -363,3 +363,78 @@ test('the terminal band draws the mascot on a pixel bar within its rows', EN, as
     await ui.unmount()
   }
 })
+
+test('the terminal bar puts a highlight on top of the fill and never passes 512 columns', async () => {
+  // #639922 mixed 45% toward white, the fill's top pixel row
+  const HI = 0xa9c785
+  const cells = decodeCells(barRaster({ key: 'b', columns: 30, ratio: 1, color: '#639922', frame: 0 }).cells)
+  expect(cells.filter(([, fg]) => fg === HI).length).toBeGreaterThan(20)
+  expect(cells.filter(([, , bg]) => bg === 0x639922).length).toBeGreaterThan(20)
+  for (const columns of [512, 513, 1000]) {
+    const r = barRaster({ key: 'b', columns, ratio: 0.5, color: '#639922' })
+    expect(r.columns).toBe(Math.min(512, columns))
+    expect(decodeCells(r.cells)).toHaveLength(r.columns)
+  }
+})
+
+test('the terminal band shows the mascot, fits narrow bands and draws nothing without rows', EN, async ($, on) => {
+  // beneath the plugin, an empty row: what draws when the band steps aside
+  ;(on as any)('ui.render', { component: 'AbovePrompt' }, async ($: any, e: any) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  await boss($, on)
+  const mount = (props: any) =>
+    $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, ...props } })
+  // the boss's crown gold and cape purple are drawn above the bar
+  let ui = await mount({})
+  const raster = await ui.find({ type: 'Raster' })
+  const colors = new Set(decodeCells(String(raster!.props.cells)).flatMap(([, fg, bg]) => [fg, bg]))
+  expect(colors.has(0xf5c542)).toBe(true)
+  expect(colors.has(0x6a4be0)).toBe(true)
+  await ui.unmount()
+  // a narrow band keeps its text and leaves the art out rather than overflow
+  for (const bodyColumns of [0, 8, 16]) {
+    ui = await mount({ bodyColumns })
+    for (const r of await ui.findAll({ type: 'Raster' })) {
+      expect(r.props.columns).toBeLessThanOrEqual(Math.max(0, bodyColumns - 8))
+    }
+    await ui.unmount()
+  }
+  // no rows: the band is not drawn at all; what is beneath it answers instead
+  ui = await mount({ maxRows: 0 })
+  expect(await ui.find({ type: 'Raster' })).toBeUndefined()
+  expect(await ui.find({ text: /1\/2/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the terminal panel keeps every agent row inside the pane at any width', EN, async ($, on) => {
+  let n = 0
+  on('agent.spawn', async () => ({ model: 'claude-opus-5-5', agentId: 'ag-' + ++n }))
+  on('turn.complete', async () => ({ text: '' }))
+  await $.agent.spawn({ prompt: 'a', description: 'Organize the files', subagentType: 'general-purpose' } as any)
+  await $.agent.spawn({ prompt: 'b', description: 'Run the tests', subagentType: 'general-purpose' } as any)
+  for (const bodyColumns of [8, 30, 50, 531, 1000]) {
+    const ui = await $.ui.mount({
+      plugin: 'pixel-crew',
+      surface: 'terminal',
+      component: 'Pane',
+      props: { ...PANE, bodyColumns },
+      requestId: 'pixel-crew-agents',
+    })
+    const rasters = await ui.findAll({ type: 'Raster' })
+    const names = rasters.map(r => String(r.props['key']))
+    expect(new Set(names).size).toBe(names.length)
+    for (const r of rasters) expect(r.props.columns).toBeLessThanOrEqual(Math.min(512, bodyColumns))
+    // a sprite and its bar sit side by side with one column of gap
+    const sprites = rasters.filter(r => String(r.props['key']).startsWith('s-'))
+    for (const sp of sprites) {
+      const id = String(sp.props['key']).slice(2)
+      const bar = rasters.find(r => r.props['key'] === 'b-' + id)
+      if (bar) expect(Number(sp.props.columns) + 1 + Number(bar.props.columns)).toBeLessThanOrEqual(bodyColumns)
+    }
+    if (bodyColumns >= 50) expect(sprites).toHaveLength(2)
+    if (bodyColumns <= 8) expect(sprites).toHaveLength(0)
+    await ui.unmount()
+  }
+})
