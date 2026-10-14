@@ -408,12 +408,111 @@ function halfBlocks(key: string, canvas: Array<Array<string | undefined>>, colum
 const blank = (w: number, h: number) =>
   Array.from({ length: h }, () => Array<string | undefined>(w).fill(undefined))
 
+// ── Small terminal art ──────────────────────────────────────────────────
+// Half size: each 2x2 block of the 18x15 grid becomes one pixel, so a
+// character takes about 9x8 pixels, four terminal rows. The dark eye pixels
+// win their block, so faces survive; the rest takes the block's commonest
+// colour, and a block with a single painted pixel stays empty, which is
+// why the 1-pixel legs are stamped back on and two characters are drawn by
+// hand.
+
+export type ArtSize = 'small' | 'full'
+
+type Canvas = Array<Array<string | undefined>>
+
+const EYE_PIXELS = new Set([PAL.E!, PAL.S!])
+// three legs under the 5-pixel body (x 2..6) of a shrunk Clawd
+const SMALL_LEGS = [2, 4, 6]
+
+function shrink(canvas: Canvas): Canvas {
+  const h = Math.ceil(canvas.length / 2)
+  const w = Math.ceil((canvas[0]?.length ?? 0) / 2)
+  const out = blank(w, h)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const block = [canvas[2 * y]?.[2 * x], canvas[2 * y]?.[2 * x + 1], canvas[2 * y + 1]?.[2 * x], canvas[2 * y + 1]?.[2 * x + 1]]
+      const painted = block.filter((p): p is string => !!p)
+      if (painted.length < 2) continue
+      const eye = painted.find(p => EYE_PIXELS.has(p))
+      if (eye) {
+        out[y]![x] = eye
+        continue
+      }
+      const count = new Map<string, number>()
+      for (const p of painted) count.set(p, (count.get(p) ?? 0) + 1)
+      out[y]![x] = [...count.entries()].sort((a, b) => b[1] - a[1])[0]![0]
+    }
+  }
+  return out
+}
+
+// drawn by hand at 9x8: the shrink loses the developer's headphones and
+// codex's screen face. The headphones use the lighter grey so a dark
+// terminal background does not swallow them.
+const SMALL_ART: Partial<Record<PcRole, string[]>> = {
+  developer: [
+    '.........',
+    '..kkkkk..',
+    '.kXXXXXk.',
+    '.kXEXEXk.',
+    'XkXXXXXkX',
+    '..GGGGG..',
+    '..GGIGG..',
+    '..X.X.X..',
+  ],
+  codex: [
+    '....A....',
+    '....Z....',
+    '.OOOOOOO.',
+    '.OSASASO.',
+    '.OSSASSO.',
+    'ZZAAAAAZZ',
+    '..AAAAA..',
+    '..DD.DD..',
+  ],
+}
+
+function gridCanvas(role: PcRole | 'clawd'): Canvas {
+  return grid(role).map(row => row.map(ch => PAL[ch]))
+}
+
+function smallCanvas(role: PcRole | 'clawd'): Canvas {
+  const art = role === 'clawd' ? undefined : SMALL_ART[role]
+  if (art) return art.map(row => [...row].map(ch => PAL[ch]))
+  const s = shrink(gridCanvas(role))
+  for (const x of SMALL_LEGS) s[s.length - 1]![x] = CLAY
+  return s
+}
+
+function crop(canvas: Canvas): Canvas {
+  let top = canvas.length
+  let bottom = -1
+  let left = canvas[0]?.length ?? 0
+  let right = -1
+  canvas.forEach((row, r) =>
+    row.forEach((p, c) => {
+      if (!p) return
+      top = Math.min(top, r)
+      bottom = Math.max(bottom, r)
+      left = Math.min(left, c)
+      right = Math.max(right, c)
+    }),
+  )
+  if (bottom < 0) return [[undefined]]
+  return canvas.slice(top, bottom + 1).map(row => row.slice(left, right + 1))
+}
+
 /**
  * A role's character for the terminal Agents panel: the same sprite the
  * desktop draws, cropped to the drawing, with one pixel row of headroom so
  * `bob` can lift it a pixel on odd frames while it works.
  */
-export function spriteRaster(role: PcRole | 'clawd', key: string, bob = false, frame = 0): RasterSpec {
+export function spriteRaster(role: PcRole | 'clawd', key: string, bob = false, frame = 0, size: ArtSize = 'full'): RasterSpec {
+  // small art has no headroom row to bob in: four rows is the point of it
+  if (size === 'small') {
+    const art = crop(smallCanvas(role))
+    return halfBlocks(key, art, art[0]!.length)
+  }
   const g = grid(role)
   let top = H
   let bottom = 0
@@ -496,10 +595,12 @@ export function bandRaster(opts: {
   frame?: number
   ratio: number | null
   color: string
+  size?: ArtSize
 }): RasterSpec {
   const columns = fitColumns(opts.columns)
   const frame = opts.frame ?? 0
   const room = Math.max(1, Math.floor(opts.maxRows))
+  if (opts.size === 'small') return smallBand(opts, columns, frame, room)
   const mascotH = room >= 3 ? Math.min(H + 1, (room - 1) * 2) : 0
   const canvas = blank(columns, mascotH)
   if (mascotH > 0) {
@@ -512,6 +613,65 @@ export function bandRaster(opts: {
       const y = p.y - y0
       if (x >= 0 && x < columns && y >= 0 && y < mascotH) canvas[y]![x] = p.fill
     }
+  }
+  canvas.push(...barPixels(columns, opts.ratio, opts.color, frame))
+  return halfBlocks(opts.key, canvas, columns)
+}
+
+/**
+ * The small band: the mascot frame shrunk to 9x8 pixels (four rows) on the
+ * bar, five rows in all. Its legs are stamped back under the body and
+ * alternate while it walks.
+ */
+function smallBand(
+  opts: { key: string; role: 'clawd' | 'boss'; pose: Pose; ratio: number | null; color: string },
+  columns: number,
+  frame: number,
+  room: number,
+): RasterSpec {
+  // the jump's raised arms merge into a box and its 1-pixel confetti vanishes
+  // at half size, so the small jump is the standing body hopping, with
+  // confetti drawn at small size instead
+  const jumping = opts.pose === 'jump'
+  const full = blank(W, H + 1)
+  for (const p of mascotPixels(opts.role, jumping ? 'walk' : opts.pose, jumping ? 0 : frame)) {
+    if (p.x >= 0 && p.x < W && p.y + 1 >= 0 && p.y + 1 <= H) full[p.y + 1]![p.x] = p.fill
+  }
+  let m = shrink(full)
+  if (jumping) {
+    const hop = [0, 1, 1, 0][Math.floor(frame / 6) % 4]!
+    if (hop) m = [...m.slice(hop), ...blank(m[0]!.length, hop)]
+  }
+  // legs: one row under the lowest row of the body, three or two by step
+  let low = -1
+  m.forEach((row, y) => row.some(p => p === CLAY) && (low = y))
+  if (low >= 0 && low + 1 < m.length) {
+    const xs = m[low]!.map((p, x) => (p === CLAY ? x : -1)).filter(x => x >= 0)
+    const a = xs[0]!
+    const b = xs[xs.length - 1]!
+    const mid = Math.round((a + b) / 2)
+    const stepping = opts.pose === 'walk' && Math.floor(frame / 6) % 2 === 1
+    for (const x of stepping ? [a + 1, b - 1] : [a, mid, b]) m[low + 1]![x] = CLAY
+  }
+  const mascotH = room >= 3 ? Math.min(m.length, (room - 1) * 2) : 0
+  const canvas = blank(columns, mascotH)
+  const ratio = Math.max(0, Math.min(1, opts.ratio ?? 0))
+  const w = m[0]!.length
+  const x0 = Math.round(Math.max(0, columns - w) * ratio)
+  const y0 = m.length - mascotH
+  m.forEach((row, y) =>
+    row.forEach((p, x) => {
+      if (p && y - y0 >= 0 && x0 + x < columns) canvas[y - y0]![x0 + x] = p
+    }),
+  )
+  if (jumping && mascotH > 0) {
+    // confetti around the mascot, falling a pixel every three frames
+    const fall = Math.floor(frame / 3)
+    CONFETTI_X.forEach((cx, i) => {
+      const x = x0 + Math.floor(cx / 2)
+      const y = ((fall + CONFETTI_Y[i]!) % mascotH)
+      if (x >= 0 && x < columns && !canvas[y]![x]) canvas[y]![x] = CONFETTI[i % CONFETTI.length]!
+    })
   }
   canvas.push(...barPixels(columns, opts.ratio, opts.color, frame))
   return halfBlocks(opts.key, canvas, columns)

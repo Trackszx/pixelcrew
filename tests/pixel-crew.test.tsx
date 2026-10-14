@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { barRaster, spriteRaster } from '../hooks/art'
+import { bandRaster, barRaster, spriteRaster } from '../hooks/art'
 import { langOf, strings } from '../hooks/i18n'
 import { activityOf, estimate, glide, resetGlide, roleOf } from '../hooks/register'
 
@@ -458,4 +458,89 @@ test('the terminal panel keeps every Raster inside the pane at any width, with u
     if (bodyColumns <= 8) expect(sprites).toHaveLength(0)
     await ui.unmount()
   }
+})
+
+// ── Small terminal art ───────────────────────────────────────────────────
+const CLAY_RGB = 0xd97757
+
+/** The pixel colours of a Raster, row by row: two pixel rows per cell row. */
+function pixels(r: { columns: number; rows: number; cells: string }): Array<Array<number | null>> {
+  const cells = decodeCells(r.cells)
+  const out: Array<Array<number | null>> = []
+  for (let row = 0; row < r.rows; row++) {
+    const top: Array<number | null> = []
+    const bottom: Array<number | null> = []
+    for (let c = 0; c < r.columns; c++) {
+      const [cp, fg, bg] = cells[row * r.columns + c]!
+      const paint = (v: number) => (v === DEFAULT ? null : v)
+      if (cp === UPPER) top.push(paint(fg)), bottom.push(paint(bg))
+      else if (cp === LOWER) top.push(paint(bg)), bottom.push(paint(fg))
+      else top.push(null), bottom.push(null)
+    }
+    out.push(top, bottom)
+  }
+  return out
+}
+
+test('small sprites are half the height and keep their faces and legs', async () => {
+  for (const role of ['developer', 'artist', 'researcher', 'worker', 'tester', 'codex', 'boss'] as const) {
+    const r = spriteRaster(role, role, false, 0, 'small')
+    expect(r.rows).toBeLessThanOrEqual(4)
+    expect(r.columns).toBeLessThanOrEqual(9)
+    const px = pixels(r).filter(row => row.some(p => p !== null))
+    const colors = new Set(px.flat())
+    if (role === 'codex') {
+      // the screen face: green eyes and mouth on the dark screen
+      expect(colors.has(0x10a37f)).toBe(true)
+      expect(colors.has(0x111418)).toBe(true)
+      continue
+    }
+    // two dark eyes on the clay face
+    expect(colors.has(0x1f1410)).toBe(true)
+    // the legs: the lowest row is three separate clay pixels
+    const legs = px[px.length - 1]!
+    const clay = legs.map((p, x) => (p === CLAY_RGB ? x : -1)).filter(x => x >= 0)
+    expect(clay).toHaveLength(3)
+    expect(clay[1]! - clay[0]!).toBeGreaterThan(1)
+    expect(clay[2]! - clay[1]!).toBeGreaterThan(1)
+  }
+  // the developer's headphones stay visible on a dark terminal: the lighter grey, not near-black
+  const dev = new Set(pixels(spriteRaster('developer', 'd', false, 0, 'small')).flat())
+  expect(dev.has(0x4a505c)).toBe(true)
+  expect(dev.has(0x2a2e36)).toBe(false)
+})
+
+test('the small band is five rows with the boss still crowned', async () => {
+  const r = bandRaster({ key: 'b', columns: 40, maxRows: 10, role: 'boss', pose: 'walk', frame: 8, ratio: 0.5, color: '#6A4BE0', size: 'small' })
+  expect(r.rows).toBe(5)
+  const colors = new Set(pixels(r).flat())
+  expect(colors.has(0xf5c542)).toBe(true)
+  expect(colors.has(0x6a4be0)).toBe(true)
+  // with only three rows the band still fits
+  expect(bandRaster({ key: 'b', columns: 40, maxRows: 3, role: 'clawd', pose: 'walk', ratio: 0.2, color: '#D97757', size: 'small' }).rows).toBeLessThanOrEqual(3)
+})
+
+test('the terminal draws small art by default and /crew-size switches to full', EN, async ($, on) => {
+  on('agent.spawn', async () => ({ model: 'claude-opus-5-5', agentId: 'agent-1' }))
+  on('turn.complete', async () => ({ text: '' }))
+  await $.agent.spawn({ prompt: 'go', description: 'Organize the files', subagentType: 'general-purpose' } as any)
+  const tallest = async () => {
+    const pane = await $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'Pane', props: PANE, requestId: 'pixel-crew-agents' })
+    const sprite = (await pane.findAll({ type: 'Raster' })).find(r => String(r.props['key']).startsWith('s-'))
+    await pane.unmount()
+    const band = await $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+    const art = await band.find({ type: 'Raster' })
+    await band.unmount()
+    return { sprite: Number(sprite!.props.rows), band: Number(art!.props.rows) }
+  }
+  const run = (args: string) => ($.command.run as any)({ command: 'crew-size', args })
+
+  expect(await tallest()).toEqual({ sprite: expect.any(Number), band: 5 })
+  expect((await tallest()).sprite).toBeLessThanOrEqual(4)
+  expect((await run('full')).text).toMatch(/full/i)
+  const full = await tallest()
+  expect(full.sprite).toBeGreaterThan(4)
+  expect(full.band).toBe(9)
+  expect((await run('')).text).toMatch(/small/i)
+  expect((await tallest()).band).toBe(5)
 })

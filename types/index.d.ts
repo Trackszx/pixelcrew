@@ -64,6 +64,8 @@ declare module 'claude-code' {
       showDone: boolean
       /** a faixa acima do prompt aparece (o /crew-bar desliga; guardado entre sessões) */
       bandOn: boolean
+      /** o tamanho da arte no terminal (o /crew-size troca; guardado entre sessões) */
+      artSize: 'small' | 'full'
       main: PcMain
       batchStart: number
       fx: PcFx

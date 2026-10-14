@@ -41,7 +41,7 @@ A pixel-art progress bar with the Claude mascot, and a side panel that turns you
 
 The plugin needs a Claude Code build with function-hook plugins (the plugin API is early access). It was built and tested on Claude Code **2.1.293**, in the desktop app's Code tab and in the terminal.
 
-In the terminal the band and the Agents panel draw the same pixel art as the desktop app, two pixels per cell with half blocks (`▀`), through Claude Code's `Raster` element (tested on **2.1.299**). The band is nine rows when there is room: eight for the mascot and one for the bar, and drops the space above the mascot's head first when there is not.
+In the terminal the band and the Agents panel draw the same pixel art as the desktop app, two pixels per cell with half blocks (`▀`), through Claude Code's `Raster` element (tested on **2.1.299**). Two sizes: **small** (the default) draws everything at half size, so the band takes five rows and each character four; **full** is the same size as the app's art, and the band takes nine rows. Pick one with `/crew-size` or the `Terminal art size` option; with fewer rows than it needs, the band drops the space above the mascot's head first.
 
 In a terminal session of Claude Code:
 
@@ -56,7 +56,7 @@ claude plugin marketplace add Trackszx/pixelcrew
 claude plugin install pixel-crew@pixelcrew
 ```
 
-Once installed at the user scope it also loads in the desktop app's Code tab. If the installer says an option is not set yet, that is the Language option: it already defaults to `auto`, so you can skip it.
+Once installed at the user scope it also loads in the desktop app's Code tab. If the installer says an option is not set yet, that is the Language or the Terminal art size option: they default to `auto` and `small`, so you can skip them.
 
 ## Commands
 
@@ -65,6 +65,7 @@ Once installed at the user scope it also loads in the desktop app's Code tab. If
 | `/crew` | Opens the Agents panel |
 | `/crew-clear` | Clears the task list and the agents |
 | `/crew-bar` | Turns the progress band off or back on (`/crew-bar off`, `/crew-bar on`, or nothing to toggle). The choice is kept across sessions; the Agents panel keeps working |
+| `/crew-size` | Small or full pixel art in the terminal (`/crew-size small`, `/crew-size full`, or nothing to switch). The choice is kept across sessions |
 
 ## Language
 
