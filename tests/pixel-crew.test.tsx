@@ -407,8 +407,12 @@ test('the terminal band shows the mascot, fits narrow bands and draws nothing wi
         ...(await ui.findAll({ type: 'Button' })).map(b => String(b.props.label).length),
         ...rasters.map(r => Number(r.props.columns)),
       ]
-      const used = String(pctText!.text).length + extras.reduce((a, w) => a + w + 1, 0)
+      // the title, when drawn, costs at least its gap even when truncated to nothing
+      const titleGap = (await ui.find({ text: /Waiting for/ })) ? 1 : 0
+      const used = String(pctText!.text).length + extras.reduce((a, w) => a + w + 1, 0) + titleGap
       expect(used).toBeLessThanOrEqual(bodyColumns)
+      // a band only as wide as the percentage draws nothing else
+      if (bodyColumns === 3) expect(used).toBe(3)
       // the art only joins when a few title columns are still left beside it
       if (rasters.length) expect(bodyColumns - used).toBeGreaterThanOrEqual(9)
       await ui.unmount()
