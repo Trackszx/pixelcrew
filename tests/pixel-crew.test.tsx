@@ -393,14 +393,31 @@ test('the terminal band shows the mascot, fits narrow bands and draws nothing wi
   expect(colors.has(0xf5c542)).toBe(true)
   expect(colors.has(0x6a4be0)).toBe(true)
   await ui.unmount()
-  // a narrow band keeps its text and leaves the art out rather than overflow
-  for (const bodyColumns of [0, 8, 16]) {
-    ui = await mount({ bodyColumns })
-    for (const r of await ui.findAll({ type: 'Raster' })) {
-      expect(r.props.columns).toBeLessThanOrEqual(Math.max(0, bodyColumns - 8))
+  // the whole row fits the band at any width: the title truncates, and what
+  // follows it (art, percentage, count, crew button, one gap each) is counted
+  for (const bodyColumns of [3, 8, 16, 30, 100]) {
+    for (const maxRows of [1, 10]) {
+      ui = await mount({ bodyColumns, maxRows })
+      const pctText = await ui.find({ text: /^\d+%$/ })
+      expect(pctText).toBeDefined()
+      const rasters = await ui.findAll({ type: 'Raster' })
+      for (const r of rasters) expect(Number(r.props.rows)).toBeLessThanOrEqual(maxRows)
+      const extras = [
+        ...(await ui.findAll({ text: /^\d+\/\d+$/ })).map(t => String(t.text).length),
+        ...(await ui.findAll({ type: 'Button' })).map(b => String(b.props.label).length),
+        ...rasters.map(r => Number(r.props.columns)),
+      ]
+      const used = String(pctText!.text).length + extras.reduce((a, w) => a + w + 1, 0)
+      expect(used).toBeLessThanOrEqual(bodyColumns)
+      // the art only joins when a few title columns are still left beside it
+      if (rasters.length) expect(bodyColumns - used).toBeGreaterThanOrEqual(9)
+      await ui.unmount()
     }
-    await ui.unmount()
   }
+  // too narrow even for the percentage: the band steps aside
+  ui = await mount({ bodyColumns: 0 })
+  expect(await ui.find({ text: /%/ })).toBeUndefined()
+  await ui.unmount()
   // no rows: the band is not drawn at all; what is beneath it answers instead
   ui = await mount({ maxRows: 0 })
   expect(await ui.find({ type: 'Raster' })).toBeUndefined()
@@ -408,7 +425,7 @@ test('the terminal band shows the mascot, fits narrow bands and draws nothing wi
   await ui.unmount()
 })
 
-test('the terminal panel keeps every agent row inside the pane at any width', EN, async ($, on) => {
+test('the terminal panel keeps every Raster inside the pane at any width, with unique keys', EN, async ($, on) => {
   let n = 0
   on('agent.spawn', async () => ({ model: 'claude-opus-5-5', agentId: 'ag-' + ++n }))
   on('turn.complete', async () => ({ text: '' }))

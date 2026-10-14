@@ -612,9 +612,22 @@ export const register: Register = (on, options) => {
       // verdade, como no app, na altura que a faixa permite. A arte só entra
       // quando cabe com o texto ao lado; numa faixa estreita fica só o texto
       const { Raster } = els
-      const tail = pct.length + (count === '' ? 0 : count.length + 1) + (crew.length > 0 ? 5 : 0) + 3
-      const room = e.props.bodyColumns - tail
-      const columns = Math.min(60, Math.floor(room * 0.6), room - TITLE_MIN)
+      // a faixa cabe em bodyColumns inteira: depois do título vêm, por ordem de
+      // importância, a porcentagem, a contagem e o botão da equipe, cada um
+      // com sua coluna de espaço; o que não cabe sai, e sem lugar nem para a
+      // porcentagem a faixa dá a vez a quem está por baixo
+      const width = Math.max(0, e.props.bodyColumns)
+      if (width < pct.length) return next(e)
+      const crewLabel = `×${crew.length}`
+      let budget = width - pct.length
+      const showCount = count !== '' && budget >= count.length + 1
+      if (showCount) budget -= count.length + 1
+      const showCrew = crew.length > 0 && budget >= crewLabel.length + 1
+      if (showCrew) budget -= crewLabel.length + 1
+      // o título (e a arte ao lado dele) ocupa o resto, menos a coluna antes da porcentagem
+      const showTitle = budget >= 1
+      const room = budget - 1
+      const columns = Math.min(60, Math.floor(room * 0.6), room - 1 - TITLE_MIN)
       const art = columns < BAND_MIN ? null : bandRaster({
         key: 'band',
         columns,
@@ -627,17 +640,19 @@ export const register: Register = (on, options) => {
       })
       return (
         <Box flexDirection="row" gap={1} alignItems="flex-end">
-          <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
-            <Text bold wrap="truncate">{title}</Text>
-          </Box>
+          {showTitle && (
+            <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+              <Text bold wrap="truncate">{title}</Text>
+            </Box>
+          )}
           {art && (
             <Box flexShrink={0}>
               <Raster {...art} />
             </Box>
           )}
           <Text bold>{pct}</Text>
-          {count !== '' && <Text dimColor>{count}</Text>}
-          {crew.length > 0 && <Button key="crew" plain label={`×${crew.length}`} onPress={openPane} />}
+          {showCount && <Text dimColor>{count}</Text>}
+          {showCrew && <Button key="crew" plain label={crewLabel} onPress={openPane} />}
         </Box>
       )
     }
