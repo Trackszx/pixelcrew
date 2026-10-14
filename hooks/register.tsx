@@ -608,9 +608,9 @@ export const register: Register = (on, options) => {
     if (e.surface === 'terminal') {
       // sem linha nenhuma a faixa não desenha nada: quem está por baixo decide
       if (e.props.maxRows <= 0) return next(e)
-      // o mascote anda sobre a barra num Raster de meio-blocos: pixels de
-      // verdade, como no app, na altura que a faixa permite. A arte só entra
-      // quando cabe com o texto ao lado; numa faixa estreita fica só o texto
+      // uma linha só: o mascote, em pixels de quadrante, anda dentro da própria
+      // barra, ao lado do título e da porcentagem. A arte só entra quando cabe
+      // com o texto ao lado; numa faixa estreita fica só o texto
       const { Raster } = els
       // a faixa cabe em bodyColumns inteira: depois do título vêm, por ordem de
       // importância, a porcentagem, a contagem e o botão da equipe, cada um
@@ -631,7 +631,6 @@ export const register: Register = (on, options) => {
       const art = columns < BAND_MIN ? null : bandRaster({
         key: 'band',
         columns,
-        maxRows: e.props.maxRows,
         role: delegating ? 'boss' : 'clawd',
         pose,
         frame: f,
@@ -639,7 +638,7 @@ export const register: Register = (on, options) => {
         color,
       })
       return (
-        <Box flexDirection="row" gap={1} alignItems="flex-end">
+        <Box flexDirection="row" gap={1}>
           {showTitle && (
             <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
               <Text bold wrap="truncate">{title}</Text>
@@ -743,12 +742,12 @@ export const register: Register = (on, options) => {
       const sub = `${a.role === 'codex' ? 'Codex' : shortModel(a.model)}${effortLabel(a.effort)}`
 
       if (isTerm) {
-        // o personagem e a barra em Raster de meio-blocos: o mesmo desenho do
-        // app, pixel a pixel, no lugar dos glifos de uma cor só
+        // o personagem numa linha, em pixels de quadrante e na cor do papel,
+        // no lugar dos glifos de uma cor só; a barra embaixo do texto
         const { Raster } = els
         // o personagem só entra se sobrar espaço para o texto ao lado; a
         // barra ocupa o resto da linha, até o limite de colunas do Raster
-        const sprite = spriteRaster(a.role, `s-${a.id}`, a.status === 'running', Math.floor(f / 9))
+        const sprite = spriteRaster(a.role, `s-${a.id}`, a.status === 'running', f)
         const width = Math.max(0, e.props.bodyColumns)
         const art = width >= sprite.columns + 1 + TEXT_MIN ? sprite : null
         const barCols = Math.min(MAX_RASTER_COLUMNS, art ? width - art.columns - 1 : width)

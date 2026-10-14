@@ -405,42 +405,6 @@ function halfBlocks(key: string, canvas: Array<Array<string | undefined>>, colum
   return { key, columns, rows, cells: encodeCells(words) }
 }
 
-const blank = (w: number, h: number) =>
-  Array.from({ length: h }, () => Array<string | undefined>(w).fill(undefined))
-
-/**
- * A role's character for the terminal Agents panel: the same sprite the
- * desktop draws, cropped to the drawing, with one pixel row of headroom so
- * `bob` can lift it a pixel on odd frames while it works.
- */
-export function spriteRaster(role: PcRole | 'clawd', key: string, bob = false, frame = 0): RasterSpec {
-  const g = grid(role)
-  let top = H
-  let bottom = 0
-  let left = W
-  let right = 0
-  g.forEach((row, r) =>
-    row.forEach((ch, c) => {
-      if (!PAL[ch]) return
-      top = Math.min(top, r)
-      bottom = Math.max(bottom, r)
-      left = Math.min(left, c)
-      right = Math.max(right, c)
-    }),
-  )
-  const w = right - left + 1
-  const h = bottom - top + 2
-  const dy = bob && frame % 2 === 1 ? -1 : 0
-  const canvas = blank(w, h)
-  g.forEach((row, r) =>
-    row.forEach((ch, c) => {
-      const fill = PAL[ch]
-      const y = r - top + 1 + dy
-      if (fill && canvas[y]) canvas[y]![c - left] = fill
-    }),
-  )
-  return halfBlocks(key, canvas, w)
-}
 
 /** The bar's two pixel rows: track, fill with a highlight on top, and the glint. */
 function barPixels(columns: number, ratio: number | null, color: string, frame: number) {
@@ -481,16 +445,77 @@ export function barRaster({ key, columns, ratio, color, frame = 0 }: BarOpts & {
   return halfBlocks(key, barPixels(n, ratio, color, frame), n)
 }
 
+// ── Terminal: one line, quadrant pixels ─────────────────────────────────
+// A cell split in four (the quadrant blocks ▘▝▖▗▀▄▌▐▚▞▛▜▙▟█) holds 2x2
+// pixels, so one terminal line holds a character two pixels tall: the body
+// with its eyes on top, the legs below. A cell can show only two colours (a
+// foreground and a background), so every drawing keeps to two colours per
+// 2x2 block (the eyes sit only over solid body), and a drawing only ever
+// moves by whole cells.
+
+// one-line drawings, 10x2 pixels (five cells); X is the body, recoloured per role
+export const LINE_ART: Record<string, [string, string]> = {
+  clawd: ['XXEXXXXEXX', 'X.XX..XX.X'],
+  step: ['XXEXXXXEXX', '.XXX..XXX.'],
+  sleep: ['XXXXXXXXXX', 'X.XX..XX.X'],
+  boss: ['UXEXXXXEXU', 'UXXX..XXXU'],
+  codex: ['OOAOOOOAOO', 'O.OO..OO.O'],
+}
+const LINE_W = 10
+
+// tl=8, tr=4, bl=2, br=1: the block whose set quadrants are the foreground
+const QUADRANT = [0x20, 0x2597, 0x2596, 0x2584, 0x259d, 0x2590, 0x259e, 0x259f, 0x2598, 0x259a, 0x258c, 0x2599, 0x2580, 0x259c, 0x259b, 0x2588]
+
+/** Two pixel rows as quadrant cells: two pixels per column of a cell. */
+function quadrants(key: string, top: Array<string | undefined>, bottom: Array<string | undefined>): RasterSpec {
+  const columns = Math.ceil(top.length / 2)
+  const words: number[] = []
+  for (let c = 0; c < columns; c++) {
+    const px = [top[2 * c], top[2 * c + 1], bottom[2 * c], bottom[2 * c + 1]]
+    const count = new Map<string, number>()
+    for (const p of px) if (p) count.set(p, (count.get(p) ?? 0) + 1)
+    const painted = [...count.entries()].sort((a, b) => b[1] - a[1]).map(([color]) => color)
+    if (painted.length === 0) {
+      words.push(SPACE, TERM_DEFAULT, TERM_DEFAULT)
+      continue
+    }
+    const fg = painted[0]!
+    // the second colour: another painted one, else the terminal's background
+    const bg = painted[1]
+    let bits = 0
+    px.forEach((p, i) => {
+      if (p === fg) bits |= 8 >> i
+    })
+    words.push(QUADRANT[bits]!, rgb(fg), bg ? rgb(bg) : TERM_DEFAULT)
+  }
+  return { key, columns, rows: 1, cells: encodeCells(words) }
+}
+
+function linePixels(name: keyof typeof LINE_ART, body: string): [Array<string | undefined>, Array<string | undefined>] {
+  const paint = (row: string) => [...row].map(ch => (ch === 'X' ? body : ch === '.' ? undefined : PAL[ch]))
+  const [a, b] = LINE_ART[name]!
+  return [paint(a), paint(b)]
+}
+
 /**
- * The terminal band: the mascot walking on the bar, at the edge of what is
- * done, in one Raster. The 18x16 mascot frame takes eight rows; with fewer
- * rows the top of the frame (confetti, "zz", "!") is cut first, and below
- * three rows only the bar is drawn.
+ * A role's one-line character for the terminal Agents panel: the Clawd in
+ * the role's colour (the codex robot is its own drawing), five cells wide.
+ * While it works its legs step.
+ */
+export function spriteRaster(role: PcRole | 'clawd', key: string, walking = false, frame = 0): RasterSpec {
+  const name = role === 'codex' ? 'codex' : role === 'boss' ? 'boss' : walking && Math.floor(frame / 6) % 2 ? 'step' : 'clawd'
+  const body = role === 'clawd' || role === 'codex' ? CLAY : ROLES[role].color
+  const [top, bottom] = linePixels(name, body)
+  return quadrants(key, top, bottom)
+}
+
+/**
+ * The terminal band in one line: the bar, with the mascot standing at the
+ * edge of what is done. Its five cells take the place of the bar under it.
  */
 export function bandRaster(opts: {
   key: string
   columns: number
-  maxRows: number
   role: 'clawd' | 'boss'
   pose: Pose
   frame?: number
@@ -499,20 +524,25 @@ export function bandRaster(opts: {
 }): RasterSpec {
   const columns = fitColumns(opts.columns)
   const frame = opts.frame ?? 0
-  const room = Math.max(1, Math.floor(opts.maxRows))
-  const mascotH = room >= 3 ? Math.min(H + 1, (room - 1) * 2) : 0
-  const canvas = blank(columns, mascotH)
-  if (mascotH > 0) {
+  const step = Math.floor(frame / 6) % 2 === 1
+  const name: keyof typeof LINE_ART =
+    opts.role === 'boss' ? 'boss' : opts.pose === 'sleep' ? 'sleep' : (opts.pose === 'walk' || opts.pose === 'jump') && step ? 'step' : 'clawd'
+  const bar = barPixels(columns, opts.ratio, opts.color, frame)
+  const top: Array<string | undefined> = []
+  const bottom: Array<string | undefined> = []
+  for (let c = 0; c < columns; c++) top.push(bar[0]![c], bar[0]![c]), bottom.push(bar[1]![c], bar[1]![c])
+  const cells = LINE_W / 2
+  if (columns >= cells) {
     const ratio = Math.max(0, Math.min(1, opts.ratio ?? 0))
-    const x0 = Math.round(Math.max(0, columns - W) * ratio)
-    // frame rows run from -1 to 14; keep the bottom mascotH of them
-    const y0 = H - mascotH
-    for (const p of mascotPixels(opts.role, opts.pose, frame)) {
-      const x = x0 + p.x
-      const y = p.y - y0
-      if (x >= 0 && x < columns && y >= 0 && y < mascotH) canvas[y]![x] = p.fill
+    // a failed step shakes the mascot one cell to each side
+    const shake = opts.pose === 'shake' ? (Math.floor(frame / 2) % 2 ? 1 : -1) : 0
+    const c0 = Math.max(0, Math.min(columns - cells, Math.round((columns - cells) * ratio) + shake))
+    const [mt, mb] = linePixels(name, CLAY)
+    for (let i = 0; i < LINE_W; i++) {
+      top[c0 * 2 + i] = mt[i]
+      bottom[c0 * 2 + i] = mb[i]
     }
   }
-  canvas.push(...barPixels(columns, opts.ratio, opts.color, frame))
-  return halfBlocks(opts.key, canvas, columns)
+  return quadrants(opts.key, top, bottom)
 }
+
