@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { PcAgent, PcFx, PcMain, PcRole, PcTask } from '../types'
-import { bandRaster, barRaster, barSvg, CLAY, fade, mascotSvg, MAX_RASTER_COLUMNS, ROLES, spriteRaster, spriteSvg } from './art'
+import { bandRaster, barRaster, barSvg, CLAY, fade, mascotSvg, MAX_RASTER_COLUMNS, ROLE_SYMBOL, ROLES, spriteRaster, spriteSvg } from './art'
 
 // terminal art budgets: the fewest columns worth drawing a band, a panel bar or
 // the text beside a sprite, and the title room the band keeps before its art
@@ -162,6 +162,34 @@ export function agentRatio(a: PcAgent): number {
   const real = ratioOf(a.tasks)
   if (real !== null) return real
   return estimate(a.steps + a.tools)
+}
+
+/**
+ * O papel do que uma ferramenta do agent principal faz: ler e buscar é do
+ * researcher, editar é do developer (do artist em estilos e imagens), e um
+ * comando vale pelo que diz, como um subagent pela descrição.
+ */
+export function toolRole(tool: string, input: any): Exclude<PcRole, 'boss'> {
+  switch (tool) {
+    case 'Read':
+    case 'Grep':
+    case 'Glob':
+    case 'WebSearch':
+    case 'WebFetch':
+      return 'researcher'
+    case 'Edit':
+    case 'MultiEdit':
+    case 'Write':
+    case 'NotebookEdit':
+      return /\.(css|scss|sass|less|svg|png|jpe?g|gif|webp|ico)$/i.test(String(input?.file_path ?? input?.notebook_path ?? ''))
+        ? 'artist'
+        : 'developer'
+    case 'Bash':
+    case 'PowerShell':
+      return roleOf('', `${input?.description ?? ''} ${input?.command ?? ''}`)
+    default:
+      return 'worker'
+  }
 }
 
 function base(path: unknown): string {
@@ -484,7 +512,8 @@ export const register: Register = (on, options) => {
       await patchAgent($, agentId, a => ({ ...a, tools: a.tools + 1, phase: activityOf(tool, input) })).catch(() => {})
     } else {
       const activity = activityOf(tool, input)
-      await update($, main, m => ({ ...m, activity, tools: m.tools + 1, working: true, done: false })).catch(() => {})
+      const role = toolRole(tool, input)
+      await update($, main, m => ({ ...m, activity, role, tools: m.tools + 1, working: true, done: false })).catch(() => {})
     }
 
     const asks = tool === 'AskUserQuestion' || tool === 'ExitPlanMode'
@@ -624,11 +653,13 @@ export const register: Register = (on, options) => {
       if (showCount) budget -= count.length + 1
       const showCrew = crew.length > 0 && budget >= crewLabel.length + 1
       if (showCrew) budget -= crewLabel.length + 1
-      // o ícone de quem trabalha, antes da barra: o Clawd em glifos (de coroa
-      // enquanto delega) e o humor do momento
-      const mood = { walk: '', jump: ' ✦', sleep: ' zz', alert: ' !', shake: ' ✗' }[pose]
-      const icon = `${delegating ? '▐▛█▜▌♛' : '▐▛█▜▌'}${mood}`
-      const showIcon = budget >= icon.length + 1 + 1 + TITLE_MIN
+      // antes da barra, só símbolos: o do papel de quem trabalha (a coroa
+      // enquanto delega), na cor desse papel, e a marca do humor
+      const mood = { walk: '', jump: '✦', sleep: 'zz', alert: '!', shake: '✗' }[pose]
+      const who = delegating ? 'boss' : m.role
+      const icon = [who ? ROLE_SYMBOL[who] : '', mood].filter(Boolean).join(' ')
+      const iconColor = shaking || !who ? color : ROLES[who].color
+      const showIcon = icon !== '' && budget >= icon.length + 1 + 1 + TITLE_MIN
       if (showIcon) budget -= icon.length + 1
       // o título (e a arte ao lado dele) ocupa o resto, menos a coluna antes da porcentagem
       const showTitle = budget >= 1
@@ -650,7 +681,7 @@ export const register: Register = (on, options) => {
               <Text bold wrap="truncate">{title}</Text>
             </Box>
           )}
-          {showIcon && <Text color={color}>{icon}</Text>}
+          {showIcon && <Text color={iconColor}>{icon}</Text>}
           {art && (
             <Box flexShrink={0}>
               <Raster {...art} />
@@ -771,7 +802,10 @@ export const register: Register = (on, options) => {
             )}
             <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
               <Box flexDirection="row" justifyContent="space-between" gap={1}>
-                <Text bold wrap="truncate">{a.description}</Text>
+                <Box flexDirection="row" gap={1} flexShrink={1} minWidth={0} overflow="hidden">
+                  <Text color={done ? fade(info.color) : info.color}>{ROLE_SYMBOL[a.role]}</Text>
+                  <Text bold wrap="truncate">{a.description}</Text>
+                </Box>
                 <Text color={markColor}>{mark}</Text>
               </Box>
               <Box flexDirection="row" gap={1}>

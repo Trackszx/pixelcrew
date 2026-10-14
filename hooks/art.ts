@@ -16,6 +16,17 @@ export const ROLES: Record<PcRole, RoleInfo> = {
   codex: { label: "codex", color: "#10A37F", light: "#6FD3B5" },
 }
 
+/** One symbol per role, drawn before the bar and on each panel row. */
+export const ROLE_SYMBOL: Record<PcRole, string> = {
+  developer: '⌨',
+  artist: '✎',
+  researcher: '⌕',
+  worker: '⚒',
+  boss: '♛',
+  tester: '✓',
+  codex: '⚡',
+}
+
 const PAL: Record<string, string> = {
   X: CLAY, E: "#1F1410",
   Y: "#F2C230", y: "#C99A1E", J: "#F08A24", L: "#FFF6C8",

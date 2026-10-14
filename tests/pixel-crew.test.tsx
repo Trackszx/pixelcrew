@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { bandRaster, barRaster, LINE_ART, spriteRaster } from '../hooks/art'
+import { bandRaster, barRaster, fade, LINE_ART, spriteRaster } from '../hooks/art'
 import { langOf, strings } from '../hooks/i18n'
 import { activityOf, estimate, glide, resetGlide, roleOf } from '../hooks/register'
 
@@ -375,21 +375,61 @@ test('the terminal band is one line: the mascot walks inside the bar', EN, async
     // the mascot walks inside the bar's own line
     expect(raster!.props.rows).toBe(1)
     expect(raster!.props.columns).toBeLessThanOrEqual(BAND.bodyColumns)
-    // before the bar, the old glyph icon of who is working: the boss, crowned, in purple
-    const icon = await ui.find({ type: 'Text', text: /▐▛█▜▌/ })
-    expect(icon?.text).toMatch(/^▐▛█▜▌♛/)
+    // before the bar, only the boss's crown, in purple: no block glyph
+    expect(await ui.find({ text: /▐▛█▜▌/ })).toBeUndefined()
+    const icon = await ui.find({ type: 'Text', text: /♛/ })
+    expect(icon?.text).toBe('♛')
     expect(String(icon?.props.color).toLowerCase()).toBe('#6a4be0')
     expect(await ui.find({ text: /1\/2/ })).toBeDefined()
     await ui.unmount()
   }
 })
 
-test('without subagents the band icon is the plain Clawd glyph', EN, async ($, on) => {
-  const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, isWorking: true } })
-  const icon = await ui.find({ type: 'Text', text: /▐▛█▜▌/ })
-  expect(icon).toBeDefined()
-  expect(icon!.text).not.toMatch(/♛/)
-  expect(String(icon!.props.color).toLowerCase()).toBe('#d97757')
+test('before any tool the band shows no symbol; a failure adds the ✗ mark', EN, async ($, on) => {
+  ;(on as any)('tool.call', { tool: 'Bash' }, async () => ({ isError: true, result: 'boom', text: 'boom' }))
+  const mount = () => $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  // working: nothing before the bar, neither the block glyph nor a crown
+  let ui = await mount()
+  expect(await ui.find({ text: /▐▛█▜▌|♛/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^(✦|zz|!|✗)$/ })).toBeUndefined()
+  await ui.unmount()
+  // a failed build: the developer's symbol, then the ✗ mark, in the error red
+  await ($.tool.call as any)({ tool: 'Bash', input: { command: 'exit 1', description: 'Run the build' } })
+  ui = await mount()
+  const mark = await ui.find({ type: 'Text', text: /✗/ })
+  expect(mark?.text).toBe('⌨ ✗')
+  expect(String(mark?.props.color).toUpperCase()).toBe('#E24B4A')
+  expect(await ui.find({ text: /▐▛█▜▌/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the band symbol is the kind of work Claude just did, in that role\'s colour', EN, async ($, on) => {
+  for (const tool of ['Edit', 'Write', 'Grep', 'Bash']) (on as any)('tool.call', { tool }, async () => ({ result: 'ok', text: 'ok' }))
+  const symbol = async (tool: string, input: any) => {
+    await ($.tool.call as any)({ tool, input })
+    const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+    const t = await ui.find({ type: 'Text', text: /^[⌨✎⌕⚒✓⚡♛]/ })
+    const out = t ? [String(t.text), String(t.props.color).toUpperCase()] : undefined
+    await ui.unmount()
+    return out
+  }
+  expect(await symbol('Edit', { file_path: '/x/app.ts', old_string: 'a', new_string: 'b' })).toEqual(['⌨', '#378ADD'])
+  expect(await symbol('Write', { file_path: '/x/theme.css', content: 'a{}' })).toEqual(['✎', '#D4537E'])
+  expect(await symbol('Grep', { pattern: 'x' })).toEqual(['⌕', '#B8864E'])
+  expect(await symbol('Bash', { command: 'yarn test', description: 'Run the tests' })).toEqual(['✓', '#F07A1E'])
+  expect(await symbol('Bash', { command: 'codex exec review', description: 'Ask Codex' })).toEqual(['⚡', '#10A37F'])
+  expect(await symbol('Bash', { command: 'ls', description: 'List files' })).toEqual(['⚒', '#639922'])
+})
+
+test('each terminal panel row shows its role symbol, greyed once finished', EN, async ($, on) => {
+  await boss($, on)
+  const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'Pane', requestId: 'pixel-crew-agents', props: PANE } as any)
+  // 'Design the logo' is still running: the artist's brush in pink
+  const brush = await ui.find({ type: 'Text', text: /^✎$/ })
+  expect(String(brush?.props.color).toUpperCase()).toBe('#D4537E')
+  // 'Build the page' finished: the developer's keyboard, faded toward grey
+  const keys = await ui.find({ type: 'Text', text: /^⌨$/ })
+  expect(String(keys?.props.color).toUpperCase()).toBe(fade('#378ADD').toUpperCase())
   await ui.unmount()
 })
 
@@ -435,7 +475,7 @@ test('the terminal band shows the mascot, fits narrow bands and draws nothing wi
         ...(await ui.findAll({ text: /^\d+\/\d+$/ })).map(t => String(t.text).length),
         ...(await ui.findAll({ type: 'Button' })).map(b => String(b.props.label).length),
         ...rasters.map(r => Number(r.props.columns)),
-        ...(await ui.findAll({ type: 'Text', text: /▐▛█▜▌/ })).map(t => String(t.text).length),
+        ...(await ui.findAll({ type: 'Text', text: /^([⌨✎⌕⚒✓⚡♛]( (✦|zz|!|✗))?|✦|zz|!|✗)$/ })).map(t => String(t.text).length),
       ]
       // the title, when drawn, costs at least its gap even when truncated to nothing
       const titleGap = (await ui.find({ text: /Waiting for/ })) ? 1 : 0
