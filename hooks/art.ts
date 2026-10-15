@@ -16,6 +16,17 @@ export const ROLES: Record<PcRole, RoleInfo> = {
   codex: { label: "codex", color: "#10A37F", light: "#6FD3B5" },
 }
 
+/** One symbol per role, drawn before the bar and on each panel row. */
+export const ROLE_SYMBOL: Record<PcRole, string> = {
+  developer: '⌨',
+  artist: '✎',
+  researcher: '⌕',
+  worker: '⚒',
+  boss: '♛',
+  tester: '✓',
+  codex: '⚡',
+}
+
 const PAL: Record<string, string> = {
   X: CLAY, E: "#1F1410",
   Y: "#F2C230", y: "#C99A1E", J: "#F08A24", L: "#FFF6C8",
@@ -213,13 +224,13 @@ const Z_GLYPH = ['XXXXX', '...X.', '..X..', '.X...', 'XXXXX']
 const CONFETTI_X = [0, 3, 5, 8, 10, 13, 15, 17, 1, 6, 11, 16]
 const CONFETTI_Y = [3, 0, 5, 2, 6, 1, 4, 0, 6, 3, 2, 5]
 
+export type Pixel = { x: number; y: number; fill: string }
+
 /**
- * O mascote da faixa (o Clawd, ou o boss enquanto delega) numa pose, num
- * quadro fixo de 18x16 pixels: o tamanho não muda entre poses e quadros, então
- * ele anda pela barra sem tremer o layout. Confete, "zz" e "!" ocupam o espaço
- * acima da cabeça.
+ * Os pixels do mascote numa pose e num quadro, no quadro fixo de 18x16 (y de
+ * -1 a 14): o SVG da faixa e o Raster do terminal desenham os mesmos.
  */
-export function mascotSvg(role: 'clawd' | 'boss', pose: Pose, frame = 0, px = 2): Sprite {
+export function mascotPixels(role: 'clawd' | 'boss', pose: Pose, frame = 0): Pixel[] {
   const g = grid(role)
   // o relógio anda a 30 quadros por segundo: passos e pulo trocam a cada 6
   // quadros (5x por segundo) e o confete cai a cada 3, para o Clawd não sair
@@ -248,9 +259,8 @@ export function mascotSvg(role: 'clawd' | 'boss', pose: Pose, frame = 0, px = 2)
   const dy = pose === 'walk' ? -(step % 2) : pose === 'jump' ? -[0, 1, 2, 1][step % 4]! : 0
   const dx = pose === 'shake' ? (Math.floor(frame / 2) % 2 ? 1 : -1) : 0
 
-  let rects = ''
-  const put = (x: number, y: number, fill: string) =>
-    (rects += `<rect x="${x}" y="${y}" width="1.02" height="1.02" fill="${fill}"/>`)
+  const px: Pixel[] = []
+  const put = (x: number, y: number, fill: string) => px.push({ x, y, fill })
   g.forEach((row, r) =>
     row.forEach((ch, c) => {
       const fill = PAL[ch]
@@ -278,6 +288,19 @@ export function mascotSvg(role: 'clawd' | 'boss', pose: Pose, frame = 0, px = 2)
   if (pose === 'alert') {
     for (const y of [0, 1, 2, 4]) put(17, y, PAL.Q!)
   }
+  return px
+}
+
+/**
+ * O mascote da faixa (o Clawd, ou o boss enquanto delega) numa pose, num
+ * quadro fixo de 18x16 pixels: o tamanho não muda entre poses e quadros, então
+ * ele anda pela barra sem tremer o layout. Confete, "zz" e "!" ocupam o espaço
+ * acima da cabeça.
+ */
+export function mascotSvg(role: 'clawd' | 'boss', pose: Pose, frame = 0, px = 2): Sprite {
+  const rects = mascotPixels(role, pose, frame)
+    .map(p => `<rect x="${p.x}" y="${p.y}" width="1.02" height="1.02" fill="${p.fill}"/>`)
+    .join('')
   const vh = H + 1
   return {
     source: `<svg xmlns="http://www.w3.org/2000/svg" width="${W * px}" height="${vh * px}" viewBox="0 -1 ${W} ${vh}" shape-rendering="crispEdges">${rects}</svg>`,
@@ -290,6 +313,8 @@ export type BarOpts = {
   ratio: number | null
   color: string
   frame?: number
+  /** a finished agent's bar: no sweeping glint, so every frame draws the same */
+  still?: boolean
 }
 
 const COLS = 60
@@ -303,6 +328,11 @@ function mix(hex: string, to: string, t: number): string {
   return "#" + ((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, "0")
 }
 
+/** A finished agent's colour: the role colour mostly greyed, a hint of it left. */
+export function fade(color: string): string {
+  return mix(color, '#7A7F88', 0.7)
+}
+
 /**
  * Barra de carregamento "brilho que passa": preenchimento sólido com uma linha
  * de brilho em cima e um reflexo diagonal de pixels que varre a parte cheia a
@@ -310,7 +340,7 @@ function mix(hex: string, to: string, t: number): string {
  * (um bloco que vai e volta). Desenhada larga e sem proporção fixa, ela estica
  * até a largura do espaço, na altura que o elemento pedir.
  */
-export function barSvg({ ratio, color, frame = 0 }: BarOpts): string {
+export function barSvg({ ratio, color, frame = 0, still = false }: BarOpts): string {
   const hi = mix(color, "#FFFFFF", 0.45)
   const glint = mix(color, "#FFFFFF", 0.8)
   const rect = (x: number, y: number, w: number, h: number, fill: string) =>
@@ -331,32 +361,211 @@ export function barSvg({ ratio, color, frame = 0 }: BarOpts): string {
   let body = rect(0, 0, COLS, ROWS, TRACK)
   if (to > from) {
     body += rect(from, 0, to - from, ROWS, color) + rect(from, 0, to - from, 1, hi)
-    const period = to - from + ROWS + 8
-    const x0 = from + (frame % period) - ROWS
-    for (let r = 0; r < ROWS; r++) {
-      const a = x0 + ROWS - 1 - r
-      const b = a + 1
-      if (a >= from && a < to) body += rect(a, r, 1, 1, glint)
-      if (b >= from && b < to) body += rect(b, r, 1, 1, hi)
+    if (!still) {
+      const period = to - from + ROWS + 8
+      const x0 = from + (frame % period) - ROWS
+      for (let r = 0; r < ROWS; r++) {
+        const a = x0 + ROWS - 1 - r
+        const b = a + 1
+        if (a >= from && a < to) body += rect(a, r, 1, 1, glint)
+        if (b >= from && b < to) body += rect(b, r, 1, 1, hi)
+      }
     }
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="${ROWS * 4}" viewBox="0 0 ${COLS} ${ROWS}" preserveAspectRatio="none" shape-rendering="crispEdges">${body}</svg>`
 }
 
-/** Versão de terminal da barra: bloco sólido, a parte vazia em cinza. */
-export function barText(cols: number, ratio: number | null): { on: string; off: string } {
-  const n = Math.max(8, cols)
-  const on = ratio === null ? 0 : Math.round(n * Math.max(0, Math.min(1, ratio)))
-  return { on: "█".repeat(on), off: "█".repeat(n - on) }
+// ── Terminal: pixel art in a Raster ─────────────────────────────────────
+// A terminal cell is twice as tall as it is wide, so one cell holds two
+// pixels stacked: "▀" painted with the top pixel as foreground and the bottom
+// pixel as background. A pixel nobody drew is the terminal's own background
+// (bit 24 alone), so the art sits on any theme without a box around it.
+
+export type RasterSpec = { key: string; columns: number; rows: number; cells: string }
+
+const TERM_DEFAULT = 0x01000000
+// the widest Raster the terminal surface accepts
+export const MAX_RASTER_COLUMNS = 512
+const fitColumns = (n: number) => Math.max(1, Math.min(MAX_RASTER_COLUMNS, Math.floor(n)))
+const UPPER = 0x2580
+const LOWER = 0x2584
+const SPACE = 0x20
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
+const rgb = (hex: string) => parseInt(hex.slice(1), 16)
+
+/** Little-endian u32 words as standard padded base64, the Raster's `cells`. */
+function encodeCells(words: number[]): string {
+  const bytes: number[] = []
+  for (const w of words) bytes.push(w & 255, (w >>> 8) & 255, (w >>> 16) & 255, (w >>> 24) & 255)
+  let out = ''
+  for (let i = 0; i < bytes.length; i += 3) {
+    const n = (bytes[i]! << 16) | ((bytes[i + 1] ?? 0) << 8) | (bytes[i + 2] ?? 0)
+    out += B64[(n >> 18) & 63]! + B64[(n >> 12) & 63]!
+    out += i + 1 < bytes.length ? B64[(n >> 6) & 63]! : '='
+    out += i + 2 < bytes.length ? B64[n & 63]! : '='
+  }
+  return out
 }
 
-export const TERM_SPRITE: Record<PcRole, string> = {
-  developer: '▐▛█▜▌⌨',
-  artist: '▐▛█▜▌✎',
-  researcher: '▐▛█▜▌⌕',
-  worker: '▐▛█▜▌⚒',
-  boss: '▐▛█▜▌♛',
-  tester: '▐▛█▜▌✓',
-  codex: '[▪▪]⚡',
+/** A canvas of hex colours (undefined: nothing drawn) as half-block cells. */
+function halfBlocks(key: string, canvas: Array<Array<string | undefined>>, columns: number): RasterSpec {
+  const rows = Math.max(1, Math.ceil(canvas.length / 2))
+  const words: number[] = []
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < columns; c++) {
+      const top = canvas[r * 2]?.[c]
+      const bottom = canvas[r * 2 + 1]?.[c]
+      if (top && bottom) words.push(UPPER, rgb(top), rgb(bottom))
+      else if (top) words.push(UPPER, rgb(top), TERM_DEFAULT)
+      else if (bottom) words.push(LOWER, rgb(bottom), TERM_DEFAULT)
+      else words.push(SPACE, TERM_DEFAULT, TERM_DEFAULT)
+    }
+  }
+  return { key, columns, rows, cells: encodeCells(words) }
+}
+
+
+/** The bar's two pixel rows: track, fill with a highlight on top, and the glint. */
+function barPixels(columns: number, ratio: number | null, color: string, frame: number, still = false) {
+  const hi = mix(color, '#FFFFFF', 0.45)
+  const glint = mix(color, '#FFFFFF', 0.8)
+  const rows: Array<Array<string | undefined>> = [Array(columns).fill(TRACK), Array(columns).fill(TRACK)]
+  let from = 0
+  let to = 0
+  if (ratio === null) {
+    const chunk = Math.max(4, Math.round(columns / 5))
+    const span = Math.max(1, columns - chunk)
+    const t = frame % (span * 2)
+    from = t <= span ? t : span * 2 - t
+    to = from + chunk
+  } else {
+    to = Math.round(columns * Math.max(0, Math.min(1, ratio)))
+  }
+  for (let x = from; x < to && x < columns; x++) {
+    rows[0]![x] = hi
+    rows[1]![x] = color
+  }
+  if (to > from && !still) {
+    // the glint: a two-pixel diagonal sweeping across the filled part
+    const period = to - from + 2 + 8
+    const x0 = from + (frame % period) - 2
+    for (let r = 0; r < 2; r++) {
+      const a = x0 + 1 - r
+      if (a >= from && a < to && a < columns) rows[r]![a] = glint
+      if (a + 1 >= from && a + 1 < to && a + 1 < columns) rows[r]![a + 1] = hi
+    }
+  }
+  return rows
+}
+
+/** The progress bar as one Raster row, for the terminal Agents panel. */
+export function barRaster({ key, columns, ratio, color, frame = 0, still = false }: BarOpts & { key: string; columns: number }): RasterSpec {
+  const n = fitColumns(columns)
+  return halfBlocks(key, barPixels(n, ratio, color, frame, still), n)
+}
+
+// ── Terminal: one line, quadrant pixels ─────────────────────────────────
+// A cell split in four (the quadrant blocks ▘▝▖▗▀▄▌▐▚▞▛▜▙▟█) holds 2x2
+// pixels, so one terminal line holds a character two pixels tall: the body
+// with its eyes on top, the legs below. A cell can show only two colours (a
+// foreground and a background), so every drawing keeps to two colours per
+// 2x2 block (the eyes sit only over solid body), and a drawing only ever
+// moves by whole cells.
+
+// one-line drawings, 10x2 pixels (five cells); X is the body, recoloured per role
+export const LINE_ART: Record<string, [string, string]> = {
+  clawd: ['XXEXXXXEXX', 'X.XX..XX.X'],
+  step: ['XXEXXXXEXX', '.XXX..XXX.'],
+  sleep: ['XXXXXXXXXX', 'X.XX..XX.X'],
+  boss: ['UXEXXXXEXU', 'UXXX..XXXU'],
+  codex: ['OOAOOOOAOO', 'O.OO..OO.O'],
+}
+const LINE_W = 10
+const EYE_ON_BODY = new Set([PAL.E!])
+
+// tl=8, tr=4, bl=2, br=1: the block whose set quadrants are the foreground
+const QUADRANT = [0x20, 0x2597, 0x2596, 0x2584, 0x259d, 0x2590, 0x259e, 0x259f, 0x2598, 0x259a, 0x258c, 0x2599, 0x2580, 0x259c, 0x259b, 0x2588]
+
+/** Two pixel rows as quadrant cells: two pixels per column of a cell. */
+function quadrants(key: string, top: Array<string | undefined>, bottom: Array<string | undefined>): RasterSpec {
+  const columns = Math.ceil(top.length / 2)
+  const words: number[] = []
+  for (let c = 0; c < columns; c++) {
+    const px = [top[2 * c], top[2 * c + 1], bottom[2 * c], bottom[2 * c + 1]]
+    const count = new Map<string, number>()
+    for (const p of px) if (p) count.set(p, (count.get(p) ?? 0) + 1)
+    const painted = [...count.entries()].sort((a, b) => b[1] - a[1]).map(([color]) => color)
+    if (painted.length === 0) {
+      words.push(SPACE, TERM_DEFAULT, TERM_DEFAULT)
+      continue
+    }
+    const fg = painted[0]!
+    // the second colour: another painted one, else the terminal's background
+    const bg = painted[1]
+    let bits = 0
+    px.forEach((p, i) => {
+      if (p === fg) bits |= 8 >> i
+    })
+    words.push(QUADRANT[bits]!, rgb(fg), bg ? rgb(bg) : TERM_DEFAULT)
+  }
+  return { key, columns, rows: 1, cells: encodeCells(words) }
+}
+
+function linePixels(name: keyof typeof LINE_ART, body: string): [Array<string | undefined>, Array<string | undefined>] {
+  const paint = (row: string) => [...row].map(ch => (ch === 'X' ? body : ch === '.' ? undefined : PAL[ch]))
+  const [a, b] = LINE_ART[name]!
+  return [paint(a), paint(b)]
+}
+
+/**
+ * A role's one-line character for the terminal Agents panel: the Clawd in
+ * the role's colour (the codex robot is its own drawing), five cells wide.
+ * While it works its legs step; once finished it is greyed out.
+ */
+export function spriteRaster(role: PcRole | 'clawd', key: string, walking = false, frame = 0, faded = false): RasterSpec {
+  const name = role === 'codex' ? 'codex' : role === 'boss' ? 'boss' : walking && Math.floor(frame / 6) % 2 ? 'step' : 'clawd'
+  const body = role === 'clawd' || role === 'codex' ? CLAY : ROLES[role].color
+  const [top, bottom] = linePixels(name, body)
+  // a finished agent greys out, its dark eyes kept
+  const tone = (p: string | undefined) => (p && faded && !EYE_ON_BODY.has(p) ? fade(p) : p)
+  return quadrants(key, top.map(tone), bottom.map(tone))
+}
+
+/**
+ * The terminal band in one line: the bar, with the mascot standing at the
+ * edge of what is done. Its five cells take the place of the bar under it.
+ */
+export function bandRaster(opts: {
+  key: string
+  columns: number
+  role: 'clawd' | 'boss'
+  pose: Pose
+  frame?: number
+  ratio: number | null
+  color: string
+}): RasterSpec {
+  const columns = fitColumns(opts.columns)
+  const frame = opts.frame ?? 0
+  const step = Math.floor(frame / 6) % 2 === 1
+  const name: keyof typeof LINE_ART =
+    opts.role === 'boss' ? 'boss' : opts.pose === 'sleep' ? 'sleep' : (opts.pose === 'walk' || opts.pose === 'jump') && step ? 'step' : 'clawd'
+  const bar = barPixels(columns, opts.ratio, opts.color, frame)
+  const top: Array<string | undefined> = []
+  const bottom: Array<string | undefined> = []
+  for (let c = 0; c < columns; c++) top.push(bar[0]![c], bar[0]![c]), bottom.push(bar[1]![c], bar[1]![c])
+  const cells = LINE_W / 2
+  if (columns >= cells) {
+    const ratio = Math.max(0, Math.min(1, opts.ratio ?? 0))
+    // a failed step shakes the mascot one cell to each side
+    const shake = opts.pose === 'shake' ? (Math.floor(frame / 2) % 2 ? 1 : -1) : 0
+    const c0 = Math.max(0, Math.min(columns - cells, Math.round((columns - cells) * ratio) + shake))
+    const [mt, mb] = linePixels(name, CLAY)
+    for (let i = 0; i < LINE_W; i++) {
+      top[c0 * 2 + i] = mt[i]
+      bottom[c0 * 2 + i] = mb[i]
+    }
+  }
+  return quadrants(opts.key, top, bottom)
 }
 

@@ -25,21 +25,23 @@ A pixel-art progress bar with the Claude mascot, and a side panel that turns you
 
 **The crew.** Each subagent gets a role from the first keyword in its description (English, Portuguese and Spanish keywords are understood):
 
-| Character | Role | Picked for |
-| --- | --- | --- |
-| Headphones and laptop | `developer` | build, implement, fix, refactor, create, write |
-| Beret, brush and palette | `artist` | design, draw, icons, logo, UI, CSS, visuals |
-| Explorer hat and lantern | `researcher` | research, explore, search, read, analyze, plan |
-| Hard hat and wrench | `worker` | anything else |
-| Safety goggles and clipboard | `tester` | test, verify, debug, review, audit |
-| Screen robot | `codex` | anything delegated to Codex |
-| Crown, cape and scepter | `boss` | Claude itself, while it delegates (never a subagent) |
+| Character | Role | Symbol | Picked for |
+| --- | --- | --- | --- |
+| Headphones and laptop | `developer` | `⌨` | build, implement, fix, refactor, create, write |
+| Beret, brush and palette | `artist` | `✎` | design, draw, icons, logo, UI, CSS, visuals |
+| Explorer hat and lantern | `researcher` | `⌕` | research, explore, search, read, analyze, plan |
+| Hard hat and wrench | `worker` | `⚒` | anything else |
+| Safety goggles and clipboard | `tester` | `✓` | test, verify, debug, review, audit |
+| Screen robot | `codex` | `⚡` | anything delegated to Codex |
+| Crown, cape and scepter | `boss` | `♛` | Claude itself, while it delegates (never a subagent) |
 
 **Progress.** If Claude or a subagent keeps a task list, the bar follows it exactly. Without one, the bar is an estimate that advances with each step and stays under 90% until the work is really done.
 
 ## Install
 
 The plugin needs a Claude Code build with function-hook plugins (the plugin API is early access). It was built and tested on Claude Code **2.1.293**, in the desktop app's Code tab and in the terminal.
+
+In the terminal everything stays one line tall: the band is a single row in which the mascot, drawn in quadrant pixels (`▘▝▖▗▀▄▌▐▚▞▛▜▙▟█`, 2×2 per cell), walks inside its own progress bar, after a symbol in the role's colour for the kind of work Claude just did (`⌕` reading or searching, `⌨` editing code, `✎` styles and images, `✓` tests, `⚒` other commands, `♛` while it delegates) and a mood mark (`✦` done, `zz` asleep, `!` waiting, `✗` failed). Each row of the Agents panel starts with a one-line character in its role's colour (codex is a white robot) and its role's symbol; a finished agent's row turns grey and stops moving. It needs Claude Code's `Raster` element (tested on **2.1.299**).
 
 In a terminal session of Claude Code:
 

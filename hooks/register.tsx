@@ -2,7 +2,14 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { PcAgent, PcFx, PcMain, PcRole, PcTask } from '../types'
-import { barSvg, barText, CLAY, mascotSvg, ROLES, spriteSvg, TERM_SPRITE } from './art'
+import { bandRaster, barRaster, barSvg, CLAY, fade, mascotSvg, MAX_RASTER_COLUMNS, ROLE_SYMBOL, ROLES, spriteRaster, spriteSvg } from './art'
+
+// terminal art budgets: the fewest columns worth drawing a band, a panel bar or
+// the text beside a sprite, and the title room the band keeps before its art
+const BAND_MIN = 12
+const BAR_MIN = 4
+const TEXT_MIN = 12
+const TITLE_MIN = 8
 import type { Pose } from './art'
 import { langOf, strings, systemLang } from './i18n'
 import type { Lang, Strings } from './i18n'
@@ -155,6 +162,34 @@ export function agentRatio(a: PcAgent): number {
   const real = ratioOf(a.tasks)
   if (real !== null) return real
   return estimate(a.steps + a.tools)
+}
+
+/**
+ * O papel do que uma ferramenta do agent principal faz: ler e buscar é do
+ * researcher, editar é do developer (do artist em estilos e imagens), e um
+ * comando vale pelo que diz, como um subagent pela descrição.
+ */
+export function toolRole(tool: string, input: any): Exclude<PcRole, 'boss'> {
+  switch (tool) {
+    case 'Read':
+    case 'Grep':
+    case 'Glob':
+    case 'WebSearch':
+    case 'WebFetch':
+      return 'researcher'
+    case 'Edit':
+    case 'MultiEdit':
+    case 'Write':
+    case 'NotebookEdit':
+      return /\.(css|scss|sass|less|svg|png|jpe?g|gif|webp|ico)$/i.test(String(input?.file_path ?? input?.notebook_path ?? ''))
+        ? 'artist'
+        : 'developer'
+    case 'Bash':
+    case 'PowerShell':
+      return roleOf('', `${input?.description ?? ''} ${input?.command ?? ''}`)
+    default:
+      return 'worker'
+  }
 }
 
 function base(path: unknown): string {
@@ -477,7 +512,8 @@ export const register: Register = (on, options) => {
       await patchAgent($, agentId, a => ({ ...a, tools: a.tools + 1, phase: activityOf(tool, input) })).catch(() => {})
     } else {
       const activity = activityOf(tool, input)
-      await update($, main, m => ({ ...m, activity, tools: m.tools + 1, working: true, done: false })).catch(() => {})
+      const role = toolRole(tool, input)
+      await update($, main, m => ({ ...m, activity, role, tools: m.tools + 1, working: true, done: false })).catch(() => {})
     }
 
     const asks = tool === 'AskUserQuestion' || tool === 'ExitPlanMode'
@@ -599,18 +635,61 @@ export const register: Register = (on, options) => {
     const openPane = () => $.ui.open({ id: PANE, title: 'Agents' }).catch(() => {})
 
     if (e.surface === 'terminal') {
-      const cols = Math.max(10, Math.min(40, e.props.bodyColumns - title.length - 24))
-      const bar = barText(cols, ratio)
-      const mood = { walk: '', jump: ' ✦', sleep: ' zz', alert: ' !', shake: ' ✗' }[pose]
+      // sem linha nenhuma a faixa não desenha nada: quem está por baixo decide
+      if (e.props.maxRows <= 0) return next(e)
+      // uma linha só: o mascote, em pixels de quadrante, anda dentro da própria
+      // barra, ao lado do título e da porcentagem. A arte só entra quando cabe
+      // com o texto ao lado; numa faixa estreita fica só o texto
+      const { Raster } = els
+      // a faixa cabe em bodyColumns inteira: depois do título vêm, por ordem de
+      // importância, a porcentagem, a contagem e o botão da equipe, cada um
+      // com sua coluna de espaço; o que não cabe sai, e sem lugar nem para a
+      // porcentagem a faixa dá a vez a quem está por baixo
+      const width = Math.max(0, e.props.bodyColumns)
+      if (width < pct.length) return next(e)
+      const crewLabel = `×${crew.length}`
+      let budget = width - pct.length
+      const showCount = count !== '' && budget >= count.length + 1
+      if (showCount) budget -= count.length + 1
+      const showCrew = crew.length > 0 && budget >= crewLabel.length + 1
+      if (showCrew) budget -= crewLabel.length + 1
+      // antes da barra, só símbolos: o do papel de quem trabalha (a coroa
+      // enquanto delega), na cor desse papel, e a marca do humor
+      const mood = { walk: '', jump: '✦', sleep: 'zz', alert: '!', shake: '✗' }[pose]
+      const who = delegating ? 'boss' : m.role
+      const icon = [who ? ROLE_SYMBOL[who] : '', mood].filter(Boolean).join(' ')
+      const iconColor = shaking || !who ? color : ROLES[who].color
+      const showIcon = icon !== '' && budget >= icon.length + 1 + 1 + TITLE_MIN
+      if (showIcon) budget -= icon.length + 1
+      // o título (e a arte ao lado dele) ocupa o resto, menos a coluna antes da porcentagem
+      const showTitle = budget >= 1
+      const room = budget - 1
+      const columns = Math.min(60, Math.floor(room * 0.6), room - 1 - TITLE_MIN)
+      const art = columns < BAND_MIN ? null : bandRaster({
+        key: 'band',
+        columns,
+        role: delegating ? 'boss' : 'clawd',
+        pose,
+        frame: f,
+        ratio,
+        color,
+      })
       return (
         <Box flexDirection="row" gap={1}>
-          <Text color={color}>{`${delegating ? '▐▛█▜▌♛' : '▐▛█▜▌'}${mood}`}</Text>
-          <Text bold wrap="truncate">{title}</Text>
-          <Text color={color}>{bar.on}</Text>
-          <Text dimColor>{bar.off}</Text>
+          {showTitle && (
+            <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+              <Text bold wrap="truncate">{title}</Text>
+            </Box>
+          )}
+          {showIcon && <Text color={iconColor}>{icon}</Text>}
+          {art && (
+            <Box flexShrink={0}>
+              <Raster {...art} />
+            </Box>
+          )}
           <Text bold>{pct}</Text>
-          {count !== '' && <Text dimColor>{count}</Text>}
-          {crew.length > 0 && <Button key="crew" plain label={`×${crew.length}`} onPress={openPane} />}
+          {showCount && <Text dimColor>{count}</Text>}
+          {showCrew && <Button key="crew" plain label={crewLabel} onPress={openPane} />}
         </Box>
       )
     }
@@ -699,29 +778,47 @@ export const register: Register = (on, options) => {
       const mark = a.status === 'running' ? '●' : a.status === 'done' ? '✓' : '✗'
       const markColor = a.status === 'running' ? CLAY : a.status === 'done' ? '#3FB27F' : '#E24B4A'
       const sub = `${a.role === 'codex' ? 'Codex' : shortModel(a.model)}${effortLabel(a.effort)}`
+      // a finished agent's row goes still and grey: no sweeping glint, the role colour faded
+      const done = a.status !== 'running'
+      const barColor = done ? fade(info.color) : info.color
+      const barFrame = done ? 0 : f
 
       if (isTerm) {
-        const bar = barText(Math.max(10, e.props.bodyColumns - 4), ratio)
+        // o personagem numa linha, em pixels de quadrante e na cor do papel,
+        // no lugar dos glifos de uma cor só; a barra embaixo do texto
+        const { Raster } = els
+        // o personagem só entra se sobrar espaço para o texto ao lado; a
+        // barra ocupa o resto da linha, até o limite de colunas do Raster
+        const sprite = spriteRaster(a.role, `s-${a.id}`, !done, f, done)
+        const width = Math.max(0, e.props.bodyColumns)
+        const art = width >= sprite.columns + 1 + TEXT_MIN ? sprite : null
+        const barCols = Math.min(MAX_RASTER_COLUMNS, art ? width - art.columns - 1 : width)
         return (
-          <Box key={`a-${a.id}`} flexDirection="column" marginBottom={1}>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Box flexDirection="row" gap={1}>
-                <Text color={info.color}>{TERM_SPRITE[a.role]}</Text>
-                <Text bold wrap="truncate">{a.description}</Text>
+          <Box key={`a-${a.id}`} flexDirection="row" gap={1} marginBottom={1}>
+            {art && (
+              <Box flexShrink={0}>
+                <Raster {...art} />
               </Box>
-              <Text color={markColor}>{mark}</Text>
-            </Box>
-            <Box flexDirection="row" gap={1}>
-              <Text color={info.color}>{info.label}</Text>
-              <Text dimColor>{sub}</Text>
-            </Box>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text dimColor wrap="truncate">{progress}{phase ? ` · ${phase}` : ''}</Text>
-              <Text dimColor>{stats}</Text>
-            </Box>
-            <Box flexDirection="row">
-              <Text color={info.color}>{bar.on}</Text>
-              <Text dimColor>{bar.off}</Text>
+            )}
+            <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+              <Box flexDirection="row" justifyContent="space-between" gap={1}>
+                <Box flexDirection="row" gap={1} flexShrink={1} minWidth={0} overflow="hidden">
+                  <Text color={done ? fade(info.color) : info.color}>{ROLE_SYMBOL[a.role]}</Text>
+                  <Text bold wrap="truncate">{a.description}</Text>
+                </Box>
+                <Text color={markColor}>{mark}</Text>
+              </Box>
+              <Box flexDirection="row" gap={1}>
+                <Text color={info.color}>{info.label}</Text>
+                <Text dimColor>{sub}</Text>
+              </Box>
+              <Box flexDirection="row" justifyContent="space-between" gap={1}>
+                <Text dimColor wrap="truncate">{progress}{phase ? ` · ${phase}` : ''}</Text>
+                <Text dimColor>{stats}</Text>
+              </Box>
+              {barCols >= BAR_MIN && (
+                <Raster {...barRaster({ key: `b-${a.id}`, columns: barCols, ratio, color: barColor, frame: barFrame, still: done })} />
+              )}
             </Box>
           </Box>
         )
@@ -748,7 +845,7 @@ export const register: Register = (on, options) => {
               <Text dimColor>{stats}</Text>
             </Box>
             <Box marginTop={1} overflow="hidden">
-              <Svg source={barSvg({ ratio, color: info.color, frame: f })} alt={L.altProgress(a.description)} height={6} />
+              <Svg source={barSvg({ ratio, color: barColor, frame: barFrame, still: done })} alt={L.altProgress(a.description)} height={6} />
             </Box>
           </Box>
         </Box>

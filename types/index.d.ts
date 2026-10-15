@@ -38,6 +38,8 @@ export type PcAgent = {
 /** O que o agent principal (o Claude da conversa) está fazendo no turno atual. */
 export type PcMain = {
   activity: string
+  /** o papel do que o agent principal fez por último, para o símbolo da faixa */
+  role?: Exclude<PcRole, 'boss'>
   steps: number
   tools: number
   working: boolean

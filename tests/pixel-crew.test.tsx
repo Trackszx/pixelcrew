@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
+import { bandRaster, barRaster, fade, LINE_ART, spriteRaster } from '../hooks/art'
 import { langOf, strings } from '../hooks/i18n'
 import { activityOf, estimate, glide, resetGlide, roleOf } from '../hooks/register'
 
@@ -278,4 +279,331 @@ test('/crew-bar turns the band off and on', EN, async ($, on) => {
   expect(await thinking()).toBeDefined()
   expect((await run('desligar')).text).toMatch(/off/)
   expect((await run('on')).text).toBe('Progress band on')
+})
+
+// ── Terminal pixel art ───────────────────────────────────────────────────
+// A Raster's cells are base64 of little-endian u32 triplets [codePoint, fg, bg];
+// this decoder reads them back so a test can look at single cells.
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+function decodeCells(cells: string): Array<[number, number, number]> {
+  const bytes: number[] = []
+  const clean = cells.replace(/=+$/, '')
+  for (let i = 0; i < clean.length; i += 4) {
+    const n = [0, 1, 2, 3].map(k => (i + k < clean.length ? B64.indexOf(clean[i + k]!) : 0))
+    const v = (n[0]! << 18) | (n[1]! << 12) | (n[2]! << 6) | n[3]!
+    bytes.push((v >> 16) & 255, (v >> 8) & 255, v & 255)
+  }
+  const out: Array<[number, number, number]> = []
+  const u32 = (o: number) => (bytes[o]! | (bytes[o + 1]! << 8) | (bytes[o + 2]! << 16) | (bytes[o + 3]! << 24)) >>> 0
+  for (let o = 0; o + 12 <= bytes.length; o += 12) out.push([u32(o), u32(o + 4), u32(o + 8)])
+  return out
+}
+const DEFAULT = 0x01000000
+const UPPER = 0x2580
+const LOWER = 0x2584
+
+const QUADRANTS = [0x20, 0x2597, 0x2596, 0x2584, 0x259d, 0x2590, 0x259e, 0x259f, 0x2598, 0x259a, 0x258c, 0x2599, 0x2580, 0x259c, 0x259b, 0x2588]
+
+test('each role is a one-line quadrant character in its own colour', async () => {
+  const body: Record<string, number> = {
+    developer: 0x378add,
+    artist: 0xd4537e,
+    researcher: 0xb8864e,
+    worker: 0x639922,
+    tester: 0xf07a1e,
+    boss: 0x6a4be0,
+  }
+  for (const role of ['developer', 'artist', 'researcher', 'worker', 'tester', 'boss', 'codex'] as const) {
+    const r = spriteRaster(role, role)
+    expect(r.rows).toBe(1)
+    expect(r.columns).toBe(5)
+    const cells = decodeCells(r.cells)
+    for (const [cp] of cells) expect(QUADRANTS).toContain(cp)
+    const colors = new Set(cells.flatMap(([, fg, bg]) => [fg, bg]))
+    if (role === 'codex') {
+      // a white robot with green eyes
+      expect(colors.has(0xe6e8eb)).toBe(true)
+      expect(colors.has(0x10a37f)).toBe(true)
+    } else {
+      expect(colors.has(body[role]!)).toBe(true)
+      expect(colors.has(0x1f1410)).toBe(true)
+    }
+  }
+})
+
+test('the terminal bar fills from the left with a highlight on top', async () => {
+  const r = barRaster({ key: 'b', columns: 20, ratio: 0.5, color: '#639922', frame: 0 })
+  const cells = decodeCells(r.cells)
+  expect(r.rows).toBe(1)
+  expect(cells).toHaveLength(20)
+  // filled half: the bottom pixel is the role colour (or the sweeping glint)
+  const filledBg = cells.slice(0, 10).map(([, , bg]) => bg)
+  expect(filledBg.filter(bg => bg === 0x639922).length).toBeGreaterThan(5)
+  // empty half: the dark track, never the role colour
+  for (const [, fg, bg] of cells.slice(10)) {
+    expect(bg).not.toBe(0x639922)
+    expect(fg).not.toBe(0x639922)
+  }
+  // an indeterminate bar still draws something
+  const busy = decodeCells(barRaster({ key: 'b', columns: 20, ratio: null, color: '#639922', frame: 7 }).cells)
+  expect(busy.some(([, , bg]) => bg === 0x639922)).toBe(true)
+})
+
+test('the terminal panel draws each subagent as pixel art, not glyphs', EN, async ($, on) => {
+  on('agent.spawn', async () => ({ model: 'claude-opus-5-5', agentId: 'agent-1' }))
+  on('turn.complete', async () => ({ text: '' }))
+  await $.agent.spawn({ prompt: 'go', description: 'Organize the files', subagentType: 'general-purpose' } as any)
+  const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'Pane', props: PANE, requestId: 'pixel-crew-agents' })
+  const rasters = await ui.findAll({ type: 'Raster' })
+  // the character and its progress bar, each one line tall
+  expect(rasters.length).toBeGreaterThanOrEqual(2)
+  for (const r of rasters) {
+    expect(r.props.columns).toBeLessThanOrEqual(PANE.bodyColumns)
+    expect(r.props.rows).toBe(1)
+  }
+  expect(await ui.find({ text: /▐▛█▜▌/ })).toBeUndefined()
+  expect(await ui.find({ text: /Organize the files/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the terminal band is one line: the mascot walks inside the bar', EN, async ($, on) => {
+  await boss($, on)
+  for (const maxRows of [10, 4]) {
+    const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, maxRows } })
+    const raster = await ui.find({ type: 'Raster' })
+    expect(raster).toBeDefined()
+    // the mascot walks inside the bar's own line
+    expect(raster!.props.rows).toBe(1)
+    expect(raster!.props.columns).toBeLessThanOrEqual(BAND.bodyColumns)
+    // before the bar, only the boss's crown, in purple: no block glyph
+    expect(await ui.find({ text: /▐▛█▜▌/ })).toBeUndefined()
+    const icon = await ui.find({ type: 'Text', text: /♛/ })
+    expect(icon?.text).toBe('♛')
+    expect(String(icon?.props.color).toLowerCase()).toBe('#6a4be0')
+    expect(await ui.find({ text: /1\/2/ })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+test('before any tool the band shows no symbol; a failure adds the ✗ mark', EN, async ($, on) => {
+  ;(on as any)('tool.call', { tool: 'Bash' }, async () => ({ isError: true, result: 'boom', text: 'boom' }))
+  const mount = () => $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  // working: nothing before the bar, neither the block glyph nor a crown
+  let ui = await mount()
+  expect(await ui.find({ text: /▐▛█▜▌|♛/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^(✦|zz|!|✗)$/ })).toBeUndefined()
+  await ui.unmount()
+  // a failed build: the developer's symbol, then the ✗ mark, in the error red
+  await ($.tool.call as any)({ tool: 'Bash', input: { command: 'exit 1', description: 'Run the build' } })
+  ui = await mount()
+  const mark = await ui.find({ type: 'Text', text: /✗/ })
+  expect(mark?.text).toBe('⌨ ✗')
+  expect(String(mark?.props.color).toUpperCase()).toBe('#E24B4A')
+  expect(await ui.find({ text: /▐▛█▜▌/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the band symbol is the kind of work Claude just did, in that role\'s colour', EN, async ($, on) => {
+  for (const tool of ['Edit', 'Write', 'Grep', 'Bash']) (on as any)('tool.call', { tool }, async () => ({ result: 'ok', text: 'ok' }))
+  const symbol = async (tool: string, input: any) => {
+    await ($.tool.call as any)({ tool, input })
+    const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+    const t = await ui.find({ type: 'Text', text: /^[⌨✎⌕⚒✓⚡♛]/ })
+    const out = t ? [String(t.text), String(t.props.color).toUpperCase()] : undefined
+    await ui.unmount()
+    return out
+  }
+  expect(await symbol('Edit', { file_path: '/x/app.ts', old_string: 'a', new_string: 'b' })).toEqual(['⌨', '#378ADD'])
+  expect(await symbol('Write', { file_path: '/x/theme.css', content: 'a{}' })).toEqual(['✎', '#D4537E'])
+  expect(await symbol('Grep', { pattern: 'x' })).toEqual(['⌕', '#B8864E'])
+  expect(await symbol('Bash', { command: 'yarn test', description: 'Run the tests' })).toEqual(['✓', '#F07A1E'])
+  expect(await symbol('Bash', { command: 'codex exec review', description: 'Ask Codex' })).toEqual(['⚡', '#10A37F'])
+  expect(await symbol('Bash', { command: 'ls', description: 'List files' })).toEqual(['⚒', '#639922'])
+})
+
+test('each terminal panel row shows its role symbol, greyed once finished', EN, async ($, on) => {
+  await boss($, on)
+  const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'Pane', requestId: 'pixel-crew-agents', props: PANE } as any)
+  // 'Design the logo' is still running: the artist's brush in pink
+  const brush = await ui.find({ type: 'Text', text: /^✎$/ })
+  expect(String(brush?.props.color).toUpperCase()).toBe('#D4537E')
+  // 'Build the page' finished: the developer's keyboard, faded toward grey
+  const keys = await ui.find({ type: 'Text', text: /^⌨$/ })
+  expect(String(keys?.props.color).toUpperCase()).toBe(fade('#378ADD').toUpperCase())
+  await ui.unmount()
+})
+
+test('the terminal bar puts a highlight on top of the fill and never passes 512 columns', async () => {
+  // #639922 mixed 45% toward white, the fill's top pixel row
+  const HI = 0xa9c785
+  const cells = decodeCells(barRaster({ key: 'b', columns: 30, ratio: 1, color: '#639922', frame: 0 }).cells)
+  expect(cells.filter(([, fg]) => fg === HI).length).toBeGreaterThan(20)
+  expect(cells.filter(([, , bg]) => bg === 0x639922).length).toBeGreaterThan(20)
+  for (const columns of [512, 513, 1000]) {
+    const r = barRaster({ key: 'b', columns, ratio: 0.5, color: '#639922' })
+    expect(r.columns).toBe(Math.min(512, columns))
+    expect(decodeCells(r.cells)).toHaveLength(r.columns)
+  }
+})
+
+test('the terminal band shows the mascot, fits narrow bands and draws nothing without rows', EN, async ($, on) => {
+  // beneath the plugin, an empty row: what draws when the band steps aside
+  ;(on as any)('ui.render', { component: 'AbovePrompt' }, async ($: any, e: any) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  await boss($, on)
+  const mount = (props: any) =>
+    $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, ...props } })
+  // the boss walks the bar in its purple cape, eyes and all
+  let ui = await mount({})
+  const raster = await ui.find({ type: 'Raster' })
+  const colors = new Set(decodeCells(String(raster!.props.cells)).flatMap(([, fg, bg]) => [fg, bg]))
+  expect(colors.has(0x1f1410)).toBe(true)
+  expect(colors.has(0x6a4be0)).toBe(true)
+  await ui.unmount()
+  // the whole row fits the band at any width: the title truncates, and what
+  // follows it (art, percentage, count, crew button, one gap each) is counted
+  for (const bodyColumns of [3, 8, 16, 30, 100]) {
+    for (const maxRows of [1, 10]) {
+      ui = await mount({ bodyColumns, maxRows })
+      const pctText = await ui.find({ text: /^\d+%$/ })
+      expect(pctText).toBeDefined()
+      const rasters = await ui.findAll({ type: 'Raster' })
+      for (const r of rasters) expect(Number(r.props.rows)).toBeLessThanOrEqual(maxRows)
+      const extras = [
+        ...(await ui.findAll({ text: /^\d+\/\d+$/ })).map(t => String(t.text).length),
+        ...(await ui.findAll({ type: 'Button' })).map(b => String(b.props.label).length),
+        ...rasters.map(r => Number(r.props.columns)),
+        ...(await ui.findAll({ type: 'Text', text: /^([⌨✎⌕⚒✓⚡♛]( (✦|zz|!|✗))?|✦|zz|!|✗)$/ })).map(t => String(t.text).length),
+      ]
+      // the title, when drawn, costs at least its gap even when truncated to nothing
+      const titleGap = (await ui.find({ text: /Waiting for/ })) ? 1 : 0
+      const used = String(pctText!.text).length + extras.reduce((a, w) => a + w + 1, 0) + titleGap
+      expect(used).toBeLessThanOrEqual(bodyColumns)
+      // a band only as wide as the percentage draws nothing else
+      if (bodyColumns === 3) expect(used).toBe(3)
+      // the art only joins when a few title columns are still left beside it
+      if (rasters.length) expect(bodyColumns - used).toBeGreaterThanOrEqual(9)
+      await ui.unmount()
+    }
+  }
+  // too narrow even for the percentage: the band steps aside
+  ui = await mount({ bodyColumns: 0 })
+  expect(await ui.find({ text: /%/ })).toBeUndefined()
+  await ui.unmount()
+  // no rows: the band is not drawn at all; what is beneath it answers instead
+  ui = await mount({ maxRows: 0 })
+  expect(await ui.find({ type: 'Raster' })).toBeUndefined()
+  expect(await ui.find({ text: /1\/2/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the terminal panel keeps every Raster inside the pane at any width, with unique keys', EN, async ($, on) => {
+  let n = 0
+  on('agent.spawn', async () => ({ model: 'claude-opus-5-5', agentId: 'ag-' + ++n }))
+  on('turn.complete', async () => ({ text: '' }))
+  await $.agent.spawn({ prompt: 'a', description: 'Organize the files', subagentType: 'general-purpose' } as any)
+  await $.agent.spawn({ prompt: 'b', description: 'Run the tests', subagentType: 'general-purpose' } as any)
+  for (const bodyColumns of [8, 30, 50, 531, 1000]) {
+    const ui = await $.ui.mount({
+      plugin: 'pixel-crew',
+      surface: 'terminal',
+      component: 'Pane',
+      props: { ...PANE, bodyColumns },
+      requestId: 'pixel-crew-agents',
+    })
+    const rasters = await ui.findAll({ type: 'Raster' })
+    const names = rasters.map(r => String(r.props['key']))
+    expect(new Set(names).size).toBe(names.length)
+    for (const r of rasters) expect(r.props.columns).toBeLessThanOrEqual(Math.min(512, bodyColumns))
+    // a sprite and its bar sit side by side with one column of gap
+    const sprites = rasters.filter(r => String(r.props['key']).startsWith('s-'))
+    for (const sp of sprites) {
+      const id = String(sp.props['key']).slice(2)
+      const bar = rasters.find(r => r.props['key'] === 'b-' + id)
+      if (bar) expect(Number(sp.props.columns) + 1 + Number(bar.props.columns)).toBeLessThanOrEqual(bodyColumns)
+    }
+    if (bodyColumns >= 50) expect(sprites).toHaveLength(2)
+    if (bodyColumns <= 8) expect(sprites).toHaveLength(0)
+    await ui.unmount()
+  }
+})
+
+test('every one-line drawing keeps two colours per cell, so each cell can be drawn', async () => {
+  for (const [name, rows] of Object.entries(LINE_ART)) {
+    expect(rows).toHaveLength(2)
+    const w = rows[0]!.length
+    expect(rows[1]!.length).toBe(w)
+    expect(w % 2).toBe(0)
+    for (let x = 0; x < w; x += 2) {
+      const block = new Set([rows[0]![x], rows[0]![x + 1], rows[1]![x], rows[1]![x + 1]])
+      if (block.size > 2) throw new Error(`${name}: cell ${x / 2} needs ${block.size} colours`)
+    }
+  }
+})
+
+test('the one-line band puts the mascot at the edge of the fill', async () => {
+  const at = (ratio: number) => {
+    const cells = decodeCells(bandRaster({ key: 'b', columns: 40, ratio, color: '#639922', frame: 0, role: 'clawd', pose: 'walk' }).cells)
+    return cells.findIndex(([, fg, bg]) => fg === 0x1f1410 || bg === 0x1f1410)
+  }
+  const r = bandRaster({ key: 'b', columns: 40, ratio: 0.5, color: '#639922', frame: 0, role: 'clawd', pose: 'walk' })
+  expect(r.rows).toBe(1)
+  expect(r.columns).toBe(40)
+  expect(at(0)).toBeLessThanOrEqual(1)
+  expect(at(0.5)).toBeGreaterThan(14)
+  expect(at(0.5)).toBeLessThan(22)
+  expect(at(1)).toBeGreaterThan(33)
+  // the fill is left of the mascot and the dark track right of it
+  const cells = decodeCells(r.cells)
+  expect(cells.slice(0, 15).filter(([, , bg]) => bg === 0x639922).length).toBeGreaterThan(10)
+  for (const [, fg, bg] of cells.slice(25)) expect([fg, bg]).not.toContain(0x639922)
+})
+
+test('a still bar has no sweeping glint: every frame is the same', async () => {
+  const still = (frame: number) => barRaster({ key: 'b', columns: 30, ratio: 1, color: '#639922', frame, still: true }).cells
+  expect(still(5)).toBe(still(0))
+  expect(still(17)).toBe(still(0))
+  // #639922 mixed 80% toward white: the glint's colour, absent from a still bar
+  const GLINT = 0xe0ebd3
+  const cells = decodeCells(still(5))
+  for (const [, fg, bg] of cells) expect([fg, bg]).not.toContain(GLINT)
+  // a moving bar still sweeps
+  expect(barRaster({ key: 'b', columns: 30, ratio: 1, color: '#639922', frame: 5 }).cells).not.toBe(still(5))
+})
+
+test('finished agents are grey and still; running ones keep their colour', EN, async ($, on) => {
+  let n = 0
+  on('agent.spawn', async () => ({ model: 'claude-opus-5-5', agentId: 'ag-' + ++n }))
+  on('turn.complete', async () => ({ text: '' }))
+  // two workers (green): the first finishes, the second keeps running
+  await $.agent.spawn({ prompt: 'a', description: 'Organize the files', subagentType: 'general-purpose' } as any)
+  await $.agent.spawn({ prompt: 'b', description: 'Organize the notes', subagentType: 'general-purpose' } as any)
+  await $.turn.complete({ agentId: 'ag-1', answer: 'ok', durationMs: 10, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  const GREEN = 0x639922
+
+  // terminal: the finished row's character and bar carry no role green
+  const term = await $.ui.mount({ plugin: 'pixel-crew', surface: 'terminal', component: 'Pane', props: { ...PANE, bodyColumns: 60 }, requestId: 'pixel-crew-agents' })
+  const rasters = await term.findAll({ type: 'Raster' })
+  const colors = (k: string) => {
+    const r = rasters.find(x => x.props['key'] === k)
+    return new Set(decodeCells(String(r!.props.cells)).flatMap(([, fg, bg]) => [fg, bg]))
+  }
+  // the worker green mixed 70% toward a neutral grey
+  const FADED = 0x738769
+  expect(colors('s-ag-1').has(GREEN)).toBe(false)
+  expect(colors('b-ag-1').has(GREEN)).toBe(false)
+  expect(colors('b-ag-1').has(FADED)).toBe(true)
+  // the running character keeps its colour (its bar may still be empty at the start)
+  expect(colors('s-ag-2').has(GREEN)).toBe(true)
+  await term.unmount()
+
+  // desktop: the finished row's bar is drawn without the role green too
+  const ui = await $.ui.mount({ plugin: 'pixel-crew', surface: 'desktop', component: 'Pane', props: PANE, requestId: 'pixel-crew-agents' })
+  const bars = (await ui.findAll({ type: 'Svg' })).filter(s => /progress/i.test(String(s.props.alt)))
+  const finished = bars.find(s => /files/.test(String(s.props.alt)))
+  expect(String(finished!.props.source)).not.toMatch(/#639922/i)
+  expect(String(finished!.props.source)).toMatch(/#738769/i)
+  await ui.unmount()
 })
